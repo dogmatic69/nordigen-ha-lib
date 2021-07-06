@@ -38,7 +38,19 @@ def data_updater(LOGGER, async_executor, balance, account_id):
         except Exception as err:
             raise UpdateFailed(f"Error updating Nordigen sensors: {err}")
 
-        data = {balance["balanceType"]: balance["balanceAmount"]["amount"] for balance in data}
+        data = {
+            **{
+                "closingBooked": None,
+                "expected": None,
+                "openingBooked": None,
+                "interimAvailable": None,
+                "interimBooked": None,
+                "forwardAvailable": None,
+                "nonInvoiced": None,
+            },
+            **{balance["balanceType"]: balance["balanceAmount"]["amount"] for balance in data},
+        }
+
         LOGGER.debug("balance for %s : %s", account_id, data)
         return data
 

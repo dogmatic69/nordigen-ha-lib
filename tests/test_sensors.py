@@ -62,6 +62,11 @@ class TestDataUpdater:
         case.assertEqual(
             res,
             {
+                "closingBooked": None,
+                "expected": None,
+                "openingBooked": None,
+                "forwardAvailable": None,
+                "nonInvoiced": None,
                 "interimAvailable": 123,
                 "interimBooked": 321,
             },
