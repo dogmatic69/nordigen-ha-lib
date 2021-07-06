@@ -106,7 +106,7 @@ class NordigenBalanceSensor(CoordinatorEntity):
         icons,
         coordinator,
         balances,
-        account_id,
+        id,
         iban,
         bban,
         unique_ref,
@@ -125,7 +125,7 @@ class NordigenBalanceSensor(CoordinatorEntity):
         self._domain = domain
         self._balances = balances
         self._balance_type = balance_type
-        self._account_id = account_id
+        self._id = id
         self._iban = iban
         self._bban = bban
         self._unique_ref = unique_ref

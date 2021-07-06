@@ -265,10 +265,10 @@ class TestBuildSensors:
 class TestSensors(unittest.TestCase):
     data = {
         "coordinator": MagicMock(),
+        "id": "account_id",
         "domain": "domain",
         "balances": "balances",
         "balance_type": "interimWhatever",
-        "account_id": "account_id",
         "iban": "iban",
         "bban": "bban",
         "unique_ref": "unique_ref",
