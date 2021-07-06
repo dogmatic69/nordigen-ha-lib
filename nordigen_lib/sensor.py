@@ -75,7 +75,6 @@ async def build_sensors(hass, LOGGER, account, CONST, debug=False):
             NordigenBalanceSensor(
                 domain=CONST["DOMAIN"],
                 icons=CONST["ICON"],
-                balances=hass.data[CONST["DOMAIN"]]["client"].account.balances,
                 balance_type="interimAvailable",
                 coordinator=balance_coordinator,
                 **account,
@@ -87,7 +86,6 @@ async def build_sensors(hass, LOGGER, account, CONST, debug=False):
             NordigenBalanceSensor(
                 domain=CONST["DOMAIN"],
                 icons=CONST["ICON"],
-                balances=hass.data[CONST["DOMAIN"]]["client"].account.balances,
                 balance_type="interimBooked",
                 coordinator=balance_coordinator,
                 **account,
@@ -105,7 +103,6 @@ class NordigenBalanceSensor(CoordinatorEntity):
         domain,
         icons,
         coordinator,
-        balances,
         id,
         iban,
         bban,
@@ -123,7 +120,6 @@ class NordigenBalanceSensor(CoordinatorEntity):
         """Initialize the sensor."""
         self._icons = icons
         self._domain = domain
-        self._balances = balances
         self._balance_type = balance_type
         self._id = id
         self._iban = iban
@@ -166,7 +162,6 @@ class NordigenBalanceSensor(CoordinatorEntity):
     @property
     def state(self):
         """Return the sensor state."""
-        print("code", self.coordinator.data[self._balance_type])
         return self.coordinator.data[self._balance_type]
 
     @property

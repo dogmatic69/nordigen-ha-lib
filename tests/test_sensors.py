@@ -202,7 +202,6 @@ class TestBuildSensors:
             **{
                 "id": "foobar-id",
                 "balance_type": "interimAvailable",
-                "balances": args["hass"].data["domain"]["client"].account.balances,
                 "config": {"available": True, "booked": False, "refresh_rate": 1},
                 "coordinator": mocked_balance_coordinator,
                 "domain": "domain",
@@ -253,7 +252,6 @@ class TestBuildSensors:
             **{
                 "id": "foobar-id",
                 "balance_type": "interimBooked",
-                "balances": args["hass"].data["domain"]["client"].account.balances,
                 "config": {"available": False, "booked": True, "refresh_rate": 1},
                 "coordinator": mocked_balance_coordinator,
                 "domain": "domain",
@@ -267,7 +265,6 @@ class TestSensors(unittest.TestCase):
         "coordinator": MagicMock(),
         "id": "account_id",
         "domain": "domain",
-        "balances": "balances",
         "balance_type": "interimWhatever",
         "iban": "iban",
         "bban": "bban",

@@ -104,7 +104,6 @@ def matched_requisition(ref, requisitions):
 
 
 def get_or_create_requisition(fn_create, fn_initiate, requisitions, reference, enduser_id, aspsp_id, LOGGER):
-    print(reference, requisitions)
     requisition = matched_requisition(reference, requisitions)
     if not requisition:
         requisition = fn_create(
