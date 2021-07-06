@@ -34,12 +34,13 @@ def data_updater(LOGGER, async_executor, balance, account_id):
     async def update():
         LOGGER.debug("Getting balance for account :%s", account_id)
         try:
-            data = await async_executor(balance, account_id)
-            LOGGER.debug("balance for %s : %s", account_id, data)
+            data = (await async_executor(balance, account_id))["balances"]
         except Exception as err:
             raise UpdateFailed(f"Error updating Nordigen sensors: {err}")
 
-        return {balance["balanceType"]: balance["balanceAmount"]["amount"] for balance in data.get("balances")}
+        data = {balance["balanceType"]: balance["balanceAmount"]["amount"] for balance in data}
+        LOGGER.debug("balance for %s : %s", account_id, data)
+        return data
 
     return update
 
