@@ -60,7 +60,7 @@ async def build_sensors(hass, LOGGER, account, CONST, debug=False):
         LOGGER=LOGGER,
         async_executor=hass.async_add_executor_job,
         balance=balance_fn,
-        account_id=account.get("account_id"),
+        account_id=account["id"],
     )
     interval = timedelta(minutes=int(account["config"][CONST["REFRESH_RATE"]]))
     balance_coordinator = build_coordinator(

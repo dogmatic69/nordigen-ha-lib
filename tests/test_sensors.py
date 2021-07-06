@@ -99,7 +99,7 @@ class TestBuildSensors:
                 "refresh_rate": 1,
                 "disable": False,
             },
-            "account_id": "foobar-id",
+            "id": "foobar-id",
         }
         const = {
             "AVAILABLE_BALANCE": "disable",
@@ -135,7 +135,7 @@ class TestBuildSensors:
                 "refresh_rate": 1,
                 "disable": False,
             },
-            "account_id": "foobar-id",
+            "id": "foobar-id",
         }
         const = {
             "DOMAIN": "domain",
@@ -179,7 +179,7 @@ class TestBuildSensors:
                 "available": True,
                 "booked": False,
             },
-            "account_id": "foobar-id",
+            "id": "foobar-id",
         }
         const = {
             "ICON": {},
@@ -200,7 +200,7 @@ class TestBuildSensors:
         assert 1 == len(res)
         mocked_nordigen_balance_sensor.assert_called_with(
             **{
-                "account_id": "foobar-id",
+                "id": "foobar-id",
                 "balance_type": "interimAvailable",
                 "balances": args["hass"].data["domain"]["client"].account.balances,
                 "config": {"available": True, "booked": False, "refresh_rate": 1},
@@ -225,12 +225,12 @@ class TestBuildSensors:
         mocked_nordigen_balance_sensor,
     ):
         account = {
+            "id": "foobar-id",
             "config": {
                 "refresh_rate": 1,
                 "available": False,
                 "booked": True,
             },
-            "account_id": "foobar-id",
         }
         const = {
             "ICON": {},
@@ -251,7 +251,7 @@ class TestBuildSensors:
         assert 1 == len(res)
         mocked_nordigen_balance_sensor.assert_called_with(
             **{
-                "account_id": "foobar-id",
+                "id": "foobar-id",
                 "balance_type": "interimBooked",
                 "balances": args["hass"].data["domain"]["client"].account.balances,
                 "config": {"available": False, "booked": True, "refresh_rate": 1},
