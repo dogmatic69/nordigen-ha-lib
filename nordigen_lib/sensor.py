@@ -209,4 +209,4 @@ class NordigenBalanceSensor(CoordinatorEntity):
     @property
     def available(self) -> bool:
         """Return True when account is enabled."""
-        return self._status == "enabled"
+        return True

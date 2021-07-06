@@ -362,19 +362,12 @@ class TestSensors(unittest.TestCase):
 
         self.assertEqual("something", sensor.icon)
 
-    def test_icon_available_true(self):
+    def test_available_true(self):
         data = dict(self.data)
         data["status"] = "enabled"
         sensor = NordigenBalanceSensor(**data)
 
         self.assertEqual(True, sensor.available)
-
-    def test_icon_available_false(self):
-        data = dict(self.data)
-        data["status"] = "not-enabled"
-        sensor = NordigenBalanceSensor(**data)
-
-        self.assertEqual(False, sensor.available)
 
     @unittest.mock.patch("nordigen_lib.sensor.datetime")
     def test_state_attributes(self, mocked_datatime):
