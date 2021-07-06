@@ -82,6 +82,8 @@ async def build_sensors(hass, LOGGER, account, CONST, debug=False):
 
     await balance_coordinator.async_config_entry_first_refresh()
 
+    LOGGER.debug("listeners: %s", balance_coordinator._listeners)
+
     entities = []
     if account["config"][CONST["AVAILABLE_BALANCE"]] is not False:
         entities.append(

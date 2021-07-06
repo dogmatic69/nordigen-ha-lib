@@ -22,12 +22,24 @@ class TestBuildCoordinator(unittest.TestCase):
         logger = MagicMock()
         updater = MagicMock()
         interval = MagicMock()
+
         res = build_coordinator(hass=hass, LOGGER=logger, updater=updater, interval=interval, reference="ref")
+
         self.assertEqual(res.hass, hass)
         self.assertEqual(res.logger, logger)
         self.assertEqual(res.update_method, updater)
         self.assertEqual(res.update_interval, interval)
         self.assertEqual(res.name, "nordigen-balance-ref")
+
+    def test_listners(self):
+        hass = MagicMock()
+        logger = MagicMock()
+        updater = MagicMock()
+        interval = MagicMock()
+
+        res = build_coordinator(hass=hass, LOGGER=logger, updater=updater, interval=interval, reference="ref")
+
+        self.assertEqual([], res._listeners)
 
 
 class TestDataUpdater:
