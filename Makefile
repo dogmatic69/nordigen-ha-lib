@@ -1,5 +1,6 @@
 .PHONY: build
 build:
+	rm dist/*
 	python setup.py sdist
 
 .PHONY: isort
@@ -16,7 +17,7 @@ flake8:
 
 .PHONY: test
 test:
-	pytest -vv
+	pytest -vv -x
 
 .PHONY: ci
 ci: isort black flake8 test
