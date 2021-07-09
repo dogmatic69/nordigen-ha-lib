@@ -4,7 +4,17 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from nordigen_lib.sensor import NordigenBalanceSensor, build_coordinator, build_sensors, data_updater, random_balance
+from nordigen_lib.sensor import (
+    NordigenBalanceSensor,
+    NordigenUnconfirmedSensor,
+    balance_update,
+    build_account_sensors,
+    build_coordinator,
+    build_sensors,
+    build_unconfirmed_sensor,
+    random_balance,
+    requisition_update,
+)
 from . import AsyncMagicMock
 
 case = unittest.TestCase()
@@ -42,7 +52,36 @@ class TestBuildCoordinator(unittest.TestCase):
         self.assertEqual([], res._listeners)
 
 
-class TestDataUpdater:
+class TestRequisitionUpdate:
+    @pytest.mark.asyncio
+    async def test_return(self):
+        executor = AsyncMagicMock()
+        executor.return_value = {"id": "req-id"}
+
+        fn = MagicMock()
+        logger = MagicMock()
+        res = requisition_update(LOGGER=logger, async_executor=executor, fn=fn, requisition_id="id")
+        res = await res()
+
+        case.assertEqual(
+            res,
+            {"id": "req-id"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_exception(self):
+        executor = AsyncMagicMock()
+        executor.side_effect = Exception("whoops")
+
+        balance = MagicMock()
+        logger = MagicMock()
+        res = requisition_update(LOGGER=logger, async_executor=executor, fn=balance, requisition_id="id")
+
+        with case.assertRaises(UpdateFailed):
+            await res()
+
+
+class TestBalanceUpdate:
     @pytest.mark.asyncio
     async def test_return(self):
         executor = AsyncMagicMock()
@@ -66,9 +105,9 @@ class TestDataUpdater:
             ]
         }
 
-        balance = MagicMock()
+        fn = MagicMock()
         logger = MagicMock()
-        res = data_updater(LOGGER=logger, async_executor=executor, balance=balance, account_id="id")
+        res = balance_update(LOGGER=logger, async_executor=executor, fn=fn, account_id="id")
         res = await res()
 
         case.assertEqual(
@@ -91,13 +130,33 @@ class TestDataUpdater:
 
         balance = MagicMock()
         logger = MagicMock()
-        res = data_updater(LOGGER=logger, async_executor=executor, balance=balance, account_id="id")
+        res = balance_update(LOGGER=logger, async_executor=executor, fn=balance, account_id="id")
 
         with case.assertRaises(UpdateFailed):
             await res()
 
 
 class TestBuildSensors:
+    @unittest.mock.patch("nordigen_lib.sensor.build_unconfirmed_sensor")
+    @unittest.mock.patch("nordigen_lib.sensor.build_account_sensors")
+    @pytest.mark.asyncio
+    async def test_build_sensors_unconfirmed(self, mocked_build_account_sensors, mocked_build_unconfirmed_sensor):
+        args = "hass", "LOGGER", {"requires_auth": True}, "CONST", "debug"
+        await build_sensors(*args)
+        mocked_build_account_sensors.assert_not_called()
+        mocked_build_unconfirmed_sensor.assert_called_with(*args)
+
+    @unittest.mock.patch("nordigen_lib.sensor.build_unconfirmed_sensor")
+    @unittest.mock.patch("nordigen_lib.sensor.build_account_sensors")
+    @pytest.mark.asyncio
+    async def test_build_sensors_account(self, mocked_build_account_sensors, mocked_build_unconfirmed_sensor):
+        args = "hass", "LOGGER", {"requires_auth": False}, "CONST", "debug"
+        await build_sensors(*args)
+        mocked_build_account_sensors.assert_called_with(*args)
+        mocked_build_unconfirmed_sensor.assert_not_called()
+
+
+class TestBuildAccountSensors:
     def build_sensors_helper(self, account, const, debug=False):
         hass = MagicMock()
         logger = MagicMock()
@@ -106,10 +165,10 @@ class TestBuildSensors:
     @unittest.mock.patch("nordigen_lib.sensor.random_balance")
     @unittest.mock.patch("nordigen_lib.sensor.build_coordinator")
     @unittest.mock.patch("nordigen_lib.sensor.timedelta")
-    @unittest.mock.patch("nordigen_lib.sensor.data_updater")
+    @unittest.mock.patch("nordigen_lib.sensor.balance_update")
     @pytest.mark.asyncio
     async def test_balance_debug(
-        self, mocked_data_updater, mocked_timedelta, mocked_build_coordinator, mocked_random_balance
+        self, mocked_balance_update, mocked_timedelta, mocked_build_coordinator, mocked_random_balance
     ):
         account = {
             "config": {
@@ -130,22 +189,22 @@ class TestBuildSensors:
         mocked_balance_coordinator.async_config_entry_first_refresh = AsyncMock()
 
         args = self.build_sensors_helper(account=account, const=const, debug=True)
-        await build_sensors(**args)
+        await build_account_sensors(**args)
 
-        mocked_data_updater.assert_called_with(
+        mocked_balance_update.assert_called_with(
             LOGGER=args["LOGGER"],
             async_executor=args["hass"].async_add_executor_job,
-            balance=mocked_random_balance,
+            fn=mocked_random_balance,
             account_id="foobar-id",
         )
 
     @unittest.mock.patch("nordigen_lib.sensor.random_balance")
     @unittest.mock.patch("nordigen_lib.sensor.build_coordinator")
     @unittest.mock.patch("nordigen_lib.sensor.timedelta")
-    @unittest.mock.patch("nordigen_lib.sensor.data_updater")
+    @unittest.mock.patch("nordigen_lib.sensor.balance_update")
     @pytest.mark.asyncio
     async def test_balance(
-        self, mocked_data_updater, mocked_timedelta, mocked_build_coordinator, mocked_random_balance
+        self, mocked_balance_update, mocked_timedelta, mocked_build_coordinator, mocked_random_balance
     ):
         account = {
             "config": {
@@ -167,12 +226,12 @@ class TestBuildSensors:
         mocked_balance_coordinator.async_config_entry_first_refresh = AsyncMock()
 
         args = self.build_sensors_helper(account=account, const=const)
-        await build_sensors(**args)
+        await build_account_sensors(**args)
 
-        mocked_data_updater.assert_called_with(
+        mocked_balance_update.assert_called_with(
             LOGGER=args["LOGGER"],
             async_executor=args["hass"].async_add_executor_job,
-            balance=args["hass"].data["domain"]["client"].account.balances,
+            fn=args["hass"].data["domain"]["client"].account.balances,
             account_id="foobar-id",
         )
 
@@ -180,11 +239,11 @@ class TestBuildSensors:
     @unittest.mock.patch("nordigen_lib.sensor.random_balance")
     @unittest.mock.patch("nordigen_lib.sensor.build_coordinator")
     @unittest.mock.patch("nordigen_lib.sensor.timedelta")
-    @unittest.mock.patch("nordigen_lib.sensor.data_updater")
+    @unittest.mock.patch("nordigen_lib.sensor.balance_update")
     @pytest.mark.asyncio
     async def test_available_entities(
         self,
-        mocked_data_updater,
+        mocked_balance_update,
         mocked_timedelta,
         mocked_build_coordinator,
         mocked_random_balance,
@@ -212,7 +271,7 @@ class TestBuildSensors:
         mocked_balance_coordinator.async_config_entry_first_refresh = AsyncMock()
 
         args = self.build_sensors_helper(account=account, const=const)
-        res = await build_sensors(**args)
+        res = await build_account_sensors(**args)
 
         assert 1 == len(res)
         mocked_nordigen_balance_sensor.assert_called_with(
@@ -230,11 +289,11 @@ class TestBuildSensors:
     @unittest.mock.patch("nordigen_lib.sensor.random_balance")
     @unittest.mock.patch("nordigen_lib.sensor.build_coordinator")
     @unittest.mock.patch("nordigen_lib.sensor.timedelta")
-    @unittest.mock.patch("nordigen_lib.sensor.data_updater")
+    @unittest.mock.patch("nordigen_lib.sensor.balance_update")
     @pytest.mark.asyncio
     async def test_booked_entities(
         self,
-        mocked_data_updater,
+        mocked_balance_update,
         mocked_timedelta,
         mocked_build_coordinator,
         mocked_random_balance,
@@ -262,7 +321,7 @@ class TestBuildSensors:
         mocked_balance_coordinator.async_config_entry_first_refresh = AsyncMock()
 
         args = self.build_sensors_helper(account=account, const=const)
-        res = await build_sensors(**args)
+        res = await build_account_sensors(**args)
 
         assert 1 == len(res)
         mocked_nordigen_balance_sensor.assert_called_with(
@@ -390,3 +449,142 @@ class TestSensors(unittest.TestCase):
             },
             sensor.state_attributes,
         )
+
+
+class TestNordigenUnconfirmedSensor(unittest.TestCase):
+    data = {
+        "domain": "foobar",
+        "coordinator": MagicMock(),
+        "id": "account_id",
+        "enduser_id": "enduser_id",
+        "reference": "reference",
+        "initiate": "initiate",
+        "icons": {
+            "auth": "something",
+            "default": "something-else",
+        },
+        "config": "config",
+    }
+
+    def test_device_info(self):
+        sensor = NordigenUnconfirmedSensor(**self.data)
+        self.assertEqual(
+            {
+                "identifiers": {("foobar", "account_id")},
+                "name": "reference enduser_id",
+            },
+            sensor.device_info,
+        )
+
+    def test_unique_id(self):
+        sensor = NordigenUnconfirmedSensor(**self.data)
+
+        self.assertEqual("reference", sensor.unique_id)
+
+    def test_name(self):
+        sensor = NordigenUnconfirmedSensor(**self.data)
+
+        self.assertEqual("reference", sensor.name)
+
+    def test_state_on(self):
+        mocked_coordinator = MagicMock()
+        mocked_coordinator.data = {"status": "LN"}
+
+        sensor = NordigenUnconfirmedSensor(**{**self.data, "coordinator": mocked_coordinator})
+
+        self.assertEqual(True, sensor.state)
+
+    def test_state_off(self):
+        mocked_coordinator = MagicMock()
+        mocked_coordinator.data = {"status": "Not LN"}
+
+        sensor = NordigenUnconfirmedSensor(**{**self.data, "coordinator": mocked_coordinator})
+
+        self.assertEqual(False, sensor.state)
+
+    def test_icon(self):
+        sensor = NordigenUnconfirmedSensor(**self.data)
+
+        self.assertEqual("something", sensor.icon)
+
+    def test_available_true(self):
+        sensor = NordigenUnconfirmedSensor(**self.data)
+
+        self.assertEqual(True, sensor.available)
+
+    @unittest.mock.patch("nordigen_lib.sensor.datetime")
+    def test_state_attributes_not_linked(self, mocked_datatime):
+        mocked_datatime.now.return_value = "last_update"
+        mocked_coordinator = MagicMock()
+        mocked_coordinator.data = {"accounts": ["account-1", "account-2"]}
+        sensor = NordigenUnconfirmedSensor(**{**self.data, "coordinator": mocked_coordinator})
+
+        print(sensor.state_attributes)
+        self.assertEqual(
+            {
+                "initiate": "initiate",
+                "info": (
+                    "Authenticate to your bank with this link. This sensor will "
+                    "monitor the requisition every few minutes and update once "
+                    "authenticated. Once authenticated this sensor will be replaced "
+                    "with the actual account sensor. If you will not authenticate "
+                    "this service consider removing the config entry."
+                ),
+                "accounts": ["account-1", "account-2"],
+                "last_update": "last_update",
+            },
+            sensor.state_attributes,
+        )
+
+    @unittest.mock.patch("nordigen_lib.sensor.datetime")
+    def test_state_attributes_linked(self, mocked_datatime):
+        mocked_datatime.now.return_value = "last_update"
+        mocked_coordinator = MagicMock()
+        mocked_coordinator.data = {"accounts": ["account-1", "account-2"], "status": "LN"}
+        sensor = NordigenUnconfirmedSensor(**{**self.data, "coordinator": mocked_coordinator})
+
+        print(sensor.state_attributes)
+        self.assertEqual(
+            {
+                "initiate": "initiate",
+                "info": (
+                    "Authentication is complete, restart Home Assistant to start "
+                    "collecting account data from 2 accounts."
+                ),
+                "accounts": ["account-1", "account-2"],
+                "last_update": "last_update",
+            },
+            sensor.state_attributes,
+        )
+
+
+class TestBuildUnconfirmedSensor:
+    @unittest.mock.patch("nordigen_lib.sensor.timedelta")
+    @unittest.mock.patch("nordigen_lib.sensor.build_coordinator")
+    @pytest.mark.asyncio
+    async def test_build_unconfirmed_sensor(self, mocked_build_coordinator, mocked_timedelta):
+        hass = MagicMock()
+        LOGGER = MagicMock()
+        requisition = {
+            "id": "req-id",
+            "enduser_id": "user-123",
+            "reference": "ref-123",
+            "initiate": "http://whatever.com",
+            "config": "config",
+        }
+
+        CONST = {"DOMAIN": "foo", "ICON": {}}
+
+        mocked_coordinator = MagicMock()
+        mocked_coordinator.async_config_entry_first_refresh = AsyncMagicMock()
+        mocked_build_coordinator.return_value = mocked_coordinator
+
+        sensors = await build_unconfirmed_sensor(hass, LOGGER, requisition, CONST, False)
+
+        case.assertEqual(1, len(sensors))
+
+        sensor = sensors[0]
+        assert isinstance(sensor, NordigenUnconfirmedSensor)
+        assert sensor.name == "ref-123"
+
+        mocked_timedelta.assert_called_with(minutes=2)

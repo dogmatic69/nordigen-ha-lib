@@ -149,7 +149,14 @@ class TestRequisition(unittest.TestCase):
         fn_initiate = MagicMock()
         mocked_matched_requisition.return_value = None
 
-        get_or_create_requisition(
+        fn_create.return_value = {
+            "id": "foobar-id",
+        }
+        fn_initiate.return_value = {
+            "initiate": "http://example.com/whatever",
+        }
+
+        res = get_or_create_requisition(
             fn_create=fn_create,
             fn_initiate=fn_initiate,
             requisitions=[],
@@ -166,6 +173,15 @@ class TestRequisition(unittest.TestCase):
             agreements=[],
         )
 
+        self.assertEqual(
+            {
+                "id": "foobar-id",
+                "initiate": "http://example.com/whatever",
+                "requires_auth": True,
+            },
+            res,
+        )
+
     @unittest.mock.patch("nordigen_lib.matched_requisition")
     def test_get_or_create_requisition_not_linked(self, mocked_matched_requisition):
 
@@ -175,6 +191,10 @@ class TestRequisition(unittest.TestCase):
         mocked_matched_requisition.return_value = {
             "id": "req-id",
             "status": "not-LN",
+        }
+
+        fn_initiate.return_value = {
+            "initiate": "http://example.com/whatever",
         }
 
         res = get_or_create_requisition(
@@ -194,7 +214,15 @@ class TestRequisition(unittest.TestCase):
             aspsp_id="aspsp",
         )
 
-        self.assertEqual({}, res)
+        self.assertEqual(
+            {
+                "id": "req-id",
+                "status": "not-LN",
+                "initiate": "http://example.com/whatever",
+                "requires_auth": True,
+            },
+            res,
+        )
 
     @unittest.mock.patch("nordigen_lib.matched_requisition")
     def test_get_or_create_requisition_valid(self, mocked_matched_requisition):

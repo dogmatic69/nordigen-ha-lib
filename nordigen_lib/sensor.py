@@ -28,13 +28,13 @@ def random_balance(*args, **kwargs):
     }
 
 
-def data_updater(LOGGER, async_executor, balance, account_id):
+def balance_update(LOGGER, async_executor, fn, account_id):
     """Fetch latest information."""
 
     async def update():
         LOGGER.debug("Getting balance for account :%s", account_id)
         try:
-            data = (await async_executor(balance, account_id))["balances"]
+            data = (await async_executor(fn, account_id))["balances"]
         except Exception as err:
             raise UpdateFailed(f"Error updating Nordigen sensors: {err}")
 
@@ -57,6 +57,22 @@ def data_updater(LOGGER, async_executor, balance, account_id):
     return update
 
 
+def requisition_update(LOGGER, async_executor, fn, requisition_id):
+    """Fetch latest information."""
+
+    async def update():
+        LOGGER.debug("Getting requisition for account :%s", requisition_id)
+        try:
+            data = await async_executor(fn, requisition_id)
+        except Exception as err:
+            raise UpdateFailed(f"Error updating Nordigen sensors: {err}")
+
+        LOGGER.debug("balance for %s : %s", requisition_id, data)
+        return data
+
+    return update
+
+
 def build_coordinator(hass, LOGGER, updater, interval, reference):
     return DataUpdateCoordinator(
         hass,
@@ -67,12 +83,12 @@ def build_coordinator(hass, LOGGER, updater, interval, reference):
     )
 
 
-async def build_sensors(hass, LOGGER, account, CONST, debug=False):
-    balance_fn = random_balance if debug else hass.data[CONST["DOMAIN"]]["client"].account.balances
-    updater = data_updater(
+async def build_account_sensors(hass, LOGGER, account, CONST, debug):
+    fn = random_balance if debug else hass.data[CONST["DOMAIN"]]["client"].account.balances
+    updater = balance_update(
         LOGGER=LOGGER,
         async_executor=hass.async_add_executor_job,
-        balance=balance_fn,
+        fn=fn,
         account_id=account["id"],
     )
     interval = timedelta(minutes=int(account["config"][CONST["REFRESH_RATE"]]))
@@ -108,6 +124,112 @@ async def build_sensors(hass, LOGGER, account, CONST, debug=False):
         )
 
     return entities
+
+
+async def build_unconfirmed_sensor(hass, LOGGER, requisition, CONST, debug):
+    updater = requisition_update(
+        LOGGER=LOGGER,
+        async_executor=hass.async_add_executor_job,
+        fn=hass.data[CONST["DOMAIN"]]["client"].requisitions.by_id,
+        requisition_id=requisition["id"],
+    )
+    interval = timedelta(minutes=2)
+    coordinator = build_coordinator(
+        hass=hass, LOGGER=LOGGER, updater=updater, interval=interval, reference=requisition.get("reference")
+    )
+
+    await coordinator.async_config_entry_first_refresh()
+
+    LOGGER.debug("listeners: %s", coordinator._listeners)
+
+    return [
+        NordigenUnconfirmedSensor(
+            domain=CONST["DOMAIN"],
+            icons=CONST["ICON"],
+            coordinator=coordinator,
+            **requisition,
+        )
+    ]
+
+
+async def build_sensors(hass, LOGGER, account, CONST, debug=False):
+    if account.get("requires_auth") is True:
+        return await build_unconfirmed_sensor(hass, LOGGER, account, CONST, debug)
+
+    return await build_account_sensors(hass, LOGGER, account, CONST, debug)
+
+
+class NordigenUnconfirmedSensor(CoordinatorEntity):
+    def __init__(self, coordinator, domain, id, enduser_id, reference, initiate, icons, *args, **kwargs):
+        """Unconfirmed sensor entity."""
+        self._domain = domain
+        self._id = id
+        self._enduser_id = enduser_id
+        self._reference = reference
+        self._initiate = initiate
+        self._icons = icons
+
+        super().__init__(coordinator)
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return {
+            "identifiers": {(self._domain, self._id)},
+            "name": "{} {}".format(self._reference, self._enduser_id),
+        }
+
+    @property
+    def unique_id(self):
+        """Return the ID of the sensor."""
+        return self._reference
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return self._reference
+
+    @property
+    def state(self):
+        """Return the sensor state."""
+        return self.coordinator.data.get("status") == "LN"
+
+    @property
+    def state_attributes(self):
+        """Return State attributes."""
+        info = (
+            "Authenticate to your bank with this link. This sensor will "
+            "monitor the requisition every few minutes and update once "
+            "authenticated. "
+            ""
+            "Once authenticated this sensor will be replaced with the actual "
+            "account sensor. If you will not authenticate this service "
+            "consider removing the config entry."
+        )
+
+        if self.state:
+            count = len(self.coordinator.data.get("accounts"))
+            info = (
+                "Authentication is complete, restart Home Assistant to "
+                f"start collecting account data from {count} accounts."
+            )
+
+        return {
+            "initiate": self._initiate,
+            "info": info,
+            "accounts": self.coordinator.data.get("accounts"),
+            "last_update": datetime.now(),
+        }
+
+    @property
+    def icon(self):
+        """Return the entity icon."""
+        return self._icons.get("auth")
+
+    @property
+    def available(self) -> bool:
+        """Return True when account is enabled."""
+        return True
 
 
 class NordigenBalanceSensor(CoordinatorEntity):

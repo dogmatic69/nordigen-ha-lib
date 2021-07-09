@@ -117,14 +117,18 @@ def get_or_create_requisition(fn_create, fn_initiate, requisitions, reference, e
         LOGGER.debug("No requisition found, created :%s", requisition)
 
     if requisition.get("status") != "LN":
-        init = fn_initiate(
-            **{
-                "id": requisition["id"],
-                "aspsp_id": aspsp_id,
-            }
-        )
-        LOGGER.info("Authenticate and accept connection and restart :%s", init["initiate"])
-        return {}
+        print(requisition)
+        requisition = {
+            **requisition,
+            **fn_initiate(
+                **{
+                    "id": requisition["id"],
+                    "aspsp_id": aspsp_id,
+                }
+            ),
+            "requires_auth": True,
+        }
+        LOGGER.info("Authenticate and accept connection and restart :%s", requisition["initiate"])
 
     return requisition
 
@@ -149,18 +153,28 @@ def get_accounts(client, configs, LOGGER, CONST):
             LOGGER=LOGGER,
         )
 
-        LOGGER.debug("Handling requisition :%s", requisition.get("id"))
-        for account_id in requisition.get("accounts", []):
-            accounts.append(
-                get_account(
-                    fn=client.account.details,
-                    id=account_id,
-                    requisition=requisition,
-                    LOGGER=LOGGER,
-                    ignored=config[CONST["IGNORE_ACCOUNTS"]],
-                    config=config,
-                )
+        accounts.extend(handle_requisition(client, config, LOGGER, CONST, requisition))
+    return accounts
+
+
+def handle_requisition(client, config, LOGGER, CONST, requisition):
+    """Handle requisition."""
+    if requisition.get("requires_auth"):
+        return [requisition]
+
+    accounts = []
+    LOGGER.debug("Handling requisition :%s", requisition.get("id"))
+    for account_id in requisition.get("accounts", []):
+        accounts.append(
+            get_account(
+                fn=client.account.details,
+                id=account_id,
+                requisition=requisition,
+                LOGGER=LOGGER,
+                ignored=config[CONST["IGNORE_ACCOUNTS"]],
+                config=config,
             )
+        )
 
     return accounts
 
