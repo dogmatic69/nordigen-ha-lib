@@ -1,6 +1,6 @@
 .PHONY: build
 build:
-	rm dist/*
+	rm dist/* || true
 	python setup.py sdist
 
 .PHONY: isort
