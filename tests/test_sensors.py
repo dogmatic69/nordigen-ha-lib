@@ -397,12 +397,12 @@ class TestSensors(unittest.TestCase):
         self.assertEqual("unique_ref whatever", sensor.name)
 
     def test_state(self):
-        ret = {"interimWhatever": "123"}
+        ret = {"interimWhatever": "123.990"}
         self.data["coordinator"].data.__getitem__.side_effect = ret.__getitem__
 
         sensor = NordigenBalanceSensor(**self.data)
 
-        self.assertEqual("123", sensor.state)
+        self.assertEqual(123.99, sensor.state)
 
     def test_unit_of_measurement(self):
         sensor = NordigenBalanceSensor(**self.data)

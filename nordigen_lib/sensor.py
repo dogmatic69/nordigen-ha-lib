@@ -299,7 +299,7 @@ class NordigenBalanceSensor(CoordinatorEntity):
     @property
     def state(self):
         """Return the sensor state."""
-        return self.coordinator.data[self._balance_type]
+        return round(float(self.coordinator.data[self._balance_type]), 2)
 
     @property
     def state_attributes(self):
