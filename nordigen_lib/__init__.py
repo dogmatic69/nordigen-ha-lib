@@ -118,7 +118,7 @@ def get_or_create_requisition(fn_create, fn_initiate, fn_remove, requisitions, r
     if not requisition:
         requisition = fn_create(
             **{
-                "redirect": "http://127.0.0.1/",
+                "redirect": "https://127.0.0.1/",
                 "reference": reference,
                 "enduser_id": enduser_id,
                 "agreements": [],

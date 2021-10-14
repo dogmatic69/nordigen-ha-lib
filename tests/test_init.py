@@ -156,7 +156,7 @@ class TestRequisition(unittest.TestCase):
             "id": "foobar-id",
         }
         fn_initiate.return_value = {
-            "initiate": "http://example.com/whatever",
+            "initiate": "https://example.com/whatever",
         }
 
         res = get_or_create_requisition(
@@ -175,7 +175,7 @@ class TestRequisition(unittest.TestCase):
         )
 
         fn_create.assert_called_with(
-            redirect="http://127.0.0.1/",
+            redirect="https://127.0.0.1/",
             reference="ref",
             enduser_id="user",
             agreements=[],
@@ -184,7 +184,7 @@ class TestRequisition(unittest.TestCase):
         self.assertEqual(
             {
                 "id": "foobar-id",
-                "initiate": "http://example.com/whatever",
+                "initiate": "https://example.com/whatever",
                 "requires_auth": True,
             },
             res,
@@ -203,7 +203,7 @@ class TestRequisition(unittest.TestCase):
             "id": "foobar-id",
         }
         fn_initiate.return_value = {
-            "initiate": "http://example.com/whatever",
+            "initiate": "https://example.com/whatever",
         }
 
         res = get_or_create_requisition(
@@ -219,7 +219,7 @@ class TestRequisition(unittest.TestCase):
 
         fn_remove.assert_not_called()
         fn_create.assert_called_with(
-            redirect="http://127.0.0.1/",
+            redirect="https://127.0.0.1/",
             reference="ref",
             enduser_id="user",
             agreements=[],
@@ -228,7 +228,7 @@ class TestRequisition(unittest.TestCase):
         self.assertEqual(
             {
                 "id": "foobar-id",
-                "initiate": "http://example.com/whatever",
+                "initiate": "https://example.com/whatever",
                 "requires_auth": True,
             },
             res,
@@ -247,7 +247,7 @@ class TestRequisition(unittest.TestCase):
         }
 
         fn_initiate.return_value = {
-            "initiate": "http://example.com/whatever",
+            "initiate": "https://example.com/whatever",
         }
 
         res = get_or_create_requisition(
@@ -273,7 +273,7 @@ class TestRequisition(unittest.TestCase):
             {
                 "id": "req-id",
                 "status": "not-LN",
-                "initiate": "http://example.com/whatever",
+                "initiate": "https://example.com/whatever",
                 "requires_auth": True,
             },
             res,
