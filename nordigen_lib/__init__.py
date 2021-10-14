@@ -57,7 +57,7 @@ def get_account(fn, id, requisition, LOGGER, ignored=[], config={}):
     try:
         account = fn(id)
         account = account.get("account", {})
-    except requests.exceptions.HTTPError as error:
+    except Exception as error:
         LOGGER.error("Unable to fetch account details from Nordigen: %s", error)
         return
 
@@ -103,8 +103,18 @@ def matched_requisition(ref, requisitions):
     return {}
 
 
-def get_or_create_requisition(fn_create, fn_initiate, requisitions, reference, enduser_id, aspsp_id, LOGGER):
+def get_or_create_requisition(fn_create, fn_initiate, fn_remove, requisitions, reference, enduser_id, aspsp_id, LOGGER):
     requisition = matched_requisition(reference, requisitions)
+    if requisition and requisition.get("status") in ["EX", "SU"]:
+        fn_remove(
+            **{
+                "id": requisition["id"],
+            }
+        )
+
+        LOGGER.info("Requisition was in failed state, removed :%s", requisition)
+        requisition = None
+
     if not requisition:
         requisition = fn_create(
             **{
@@ -146,6 +156,7 @@ def get_accounts(client, configs, LOGGER, CONST):
         requisition = get_or_create_requisition(
             fn_create=client.requisitions.create,
             fn_initiate=client.requisitions.initiate,
+            fn_remove=client.requisitions.remove,
             requisitions=requisitions,
             reference=get_reference(**config),
             aspsp_id=config[CONST["ASPSP_ID"]],

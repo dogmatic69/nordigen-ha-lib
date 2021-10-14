@@ -142,11 +142,61 @@ class TestRequisition(unittest.TestCase):
         self.assertEqual({"reference": "erf"}, res)
 
     @unittest.mock.patch("nordigen_lib.matched_requisition")
+    def test_get_or_create_requisition_EX(self, mocked_matched_requisition):
+        LOGGER = MagicMock()
+        fn_create = MagicMock()
+        fn_initiate = MagicMock()
+        fn_remove = MagicMock()
+        mocked_matched_requisition.return_value = {
+            "id": "req-id",
+            "status": "EX",
+        }
+
+        fn_create.return_value = {
+            "id": "foobar-id",
+        }
+        fn_initiate.return_value = {
+            "initiate": "http://example.com/whatever",
+        }
+
+        res = get_or_create_requisition(
+            fn_create=fn_create,
+            fn_initiate=fn_initiate,
+            fn_remove=fn_remove,
+            requisitions=[],
+            reference="ref",
+            enduser_id="user",
+            aspsp_id="aspsp",
+            LOGGER=LOGGER,
+        )
+
+        fn_remove.assert_called_with(
+            id="req-id",
+        )
+
+        fn_create.assert_called_with(
+            redirect="http://127.0.0.1/",
+            reference="ref",
+            enduser_id="user",
+            agreements=[],
+        )
+
+        self.assertEqual(
+            {
+                "id": "foobar-id",
+                "initiate": "http://example.com/whatever",
+                "requires_auth": True,
+            },
+            res,
+        )
+
+    @unittest.mock.patch("nordigen_lib.matched_requisition")
     def test_get_or_create_requisition_not_exist(self, mocked_matched_requisition):
 
         LOGGER = MagicMock()
         fn_create = MagicMock()
         fn_initiate = MagicMock()
+        fn_remove = MagicMock()
         mocked_matched_requisition.return_value = None
 
         fn_create.return_value = {
@@ -159,6 +209,7 @@ class TestRequisition(unittest.TestCase):
         res = get_or_create_requisition(
             fn_create=fn_create,
             fn_initiate=fn_initiate,
+            fn_remove=fn_remove,
             requisitions=[],
             reference="ref",
             enduser_id="user",
@@ -166,6 +217,7 @@ class TestRequisition(unittest.TestCase):
             LOGGER=LOGGER,
         )
 
+        fn_remove.assert_not_called()
         fn_create.assert_called_with(
             redirect="http://127.0.0.1/",
             reference="ref",
@@ -188,6 +240,7 @@ class TestRequisition(unittest.TestCase):
         LOGGER = MagicMock()
         fn_create = MagicMock()
         fn_initiate = MagicMock()
+        fn_remove = MagicMock()
         mocked_matched_requisition.return_value = {
             "id": "req-id",
             "status": "not-LN",
@@ -200,6 +253,7 @@ class TestRequisition(unittest.TestCase):
         res = get_or_create_requisition(
             fn_create=fn_create,
             fn_initiate=fn_initiate,
+            fn_remove=fn_remove,
             requisitions=[],
             reference="ref",
             enduser_id="user",
@@ -208,6 +262,7 @@ class TestRequisition(unittest.TestCase):
         )
 
         fn_create.assert_not_called()
+        fn_remove.assert_not_called()
 
         fn_initiate.assert_called_with(
             id="req-id",
@@ -230,6 +285,7 @@ class TestRequisition(unittest.TestCase):
         LOGGER = MagicMock()
         fn_create = MagicMock()
         fn_initiate = MagicMock()
+        fn_remove = MagicMock()
         mocked_matched_requisition.return_value = {
             "id": "req-id",
             "status": "LN",
@@ -238,6 +294,7 @@ class TestRequisition(unittest.TestCase):
         res = get_or_create_requisition(
             fn_create=fn_create,
             fn_initiate=fn_initiate,
+            fn_remove=fn_remove,
             requisitions=[],
             reference="ref",
             enduser_id="user",
@@ -246,7 +303,7 @@ class TestRequisition(unittest.TestCase):
         )
 
         fn_create.assert_not_called()
-
+        fn_remove.assert_not_called()
         fn_initiate.assert_not_called()
 
         self.assertEqual(
