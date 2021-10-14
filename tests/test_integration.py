@@ -41,7 +41,7 @@ class TestIntegration(unittest.TestCase):
             "status": "CR",
         }
 
-        clinet_instance.requisitions.initiate.return_value = {"initiate": "http://example.com/whoohooo"}
+        clinet_instance.requisitions.initiate.return_value = {"initiate": "https://example.com/whoohooo"}
 
         entry(hass=hass, config=config, CONST=const, LOGGER=LOGGER)
 

@@ -569,7 +569,7 @@ class TestBuildUnconfirmedSensor:
             "id": "req-id",
             "enduser_id": "user-123",
             "reference": "ref-123",
-            "initiate": "http://whatever.com",
+            "initiate": "https://whatever.com",
             "config": "config",
         }
 
