@@ -34,17 +34,17 @@ dev:
 
 .PHONY: install-pip
 install-pip:
-	python -m pip install --upgrade pip
+	python -m pip install --upgrade pip==20.2
 
 .PHONY: install-dev
 install-dev: install-pip
 	pip install -e ".[dev]"
 
-.PHONY: install-deploy
-install-deploy: install-pip
-	pip install -e ".[deploy]"
+.PHONY: install-publish
+install-publish: install-pip
+	pip install -e ".[publish]"
 
-.PHONY: deploy
-deploy: build
+.PHONY: publish
+publish: build
 	twine upload --verbose dist/*
 
