@@ -26,7 +26,7 @@ class TestSchema(unittest.TestCase):
         config_schema(vol, cv, const)
 
         self.assertEqual(vol.Schema.call_count, 2)
-        self.assertEqual(vol.Required.call_count, 4)
+        self.assertEqual(vol.Required.call_count, 5)
         self.assertEqual(vol.Optional.call_count, 7)
 
 
@@ -39,26 +39,26 @@ class TestGetConfig(unittest.TestCase):
     def test_first(self):
         res = get_config(
             [
-                {"enduser_id": "user1", "aspsp_id": "aspsp1"},
-                {"enduser_id": "user2", "aspsp_id": "aspsp2"},
-                {"enduser_id": "user3", "aspsp_id": "aspsp3"},
+                {"enduser_id": "user1", "institution_id": "aspsp1"},
+                {"enduser_id": "user2", "institution_id": "aspsp2"},
+                {"enduser_id": "user3", "institution_id": "aspsp3"},
             ],
             {"reference": "user1-aspsp1"},
         )
 
-        self.assertEqual({"enduser_id": "user1", "aspsp_id": "aspsp1"}, res)
+        self.assertEqual({"enduser_id": "user1", "institution_id": "aspsp1"}, res)
 
     def test_last(self):
         res = get_config(
             [
-                {"enduser_id": "user1", "aspsp_id": "aspsp1"},
-                {"enduser_id": "user2", "aspsp_id": "aspsp2"},
-                {"enduser_id": "user3", "aspsp_id": "aspsp3"},
+                {"enduser_id": "user1", "institution_id": "aspsp1"},
+                {"enduser_id": "user2", "institution_id": "aspsp2"},
+                {"enduser_id": "user3", "institution_id": "aspsp3"},
             ],
             {"reference": "user3-aspsp3"},
         )
 
-        self.assertEqual({"enduser_id": "user3", "aspsp_id": "aspsp3"}, res)
+        self.assertEqual({"enduser_id": "user3", "institution_id": "aspsp3"}, res)
 
 
 class TestReferenc(unittest.TestCase):
@@ -94,7 +94,7 @@ class TestGetAccount(unittest.TestCase):
         fn.return_value = {"account": {}}
         get_account(fn=fn, id="id", requisition={}, LOGGER=LOGGER)
 
-        LOGGER.warn.assert_called_with("Strange account: %s | %s", {}, {})
+        LOGGER.warn.assert_called_with("No iban: %s | %s", {}, {})
 
     def test_ignored(self):
         fn = MagicMock()
@@ -145,7 +145,6 @@ class TestRequisition(unittest.TestCase):
     def test_get_or_create_requisition_EX(self, mocked_matched_requisition):
         LOGGER = MagicMock()
         fn_create = MagicMock()
-        fn_initiate = MagicMock()
         fn_remove = MagicMock()
         mocked_matched_requisition.return_value = {
             "id": "req-id",
@@ -154,19 +153,15 @@ class TestRequisition(unittest.TestCase):
 
         fn_create.return_value = {
             "id": "foobar-id",
-        }
-        fn_initiate.return_value = {
-            "initiate": "https://example.com/whatever",
+            "link": "https://example.com/whatever",
         }
 
         res = get_or_create_requisition(
             fn_create=fn_create,
-            fn_initiate=fn_initiate,
             fn_remove=fn_remove,
             requisitions=[],
             reference="ref",
-            enduser_id="user",
-            aspsp_id="aspsp",
+            institution_id="aspsp",
             LOGGER=LOGGER,
         )
 
@@ -177,17 +172,15 @@ class TestRequisition(unittest.TestCase):
         fn_create.assert_called_with(
             redirect="https://127.0.0.1/",
             reference="ref",
-            enduser_id="user",
-            agreements=[],
+            institution_id="aspsp",
         )
 
         self.assertEqual(
+            res,
             {
                 "id": "foobar-id",
-                "initiate": "https://example.com/whatever",
-                "requires_auth": True,
+                "link": "https://example.com/whatever",
             },
-            res,
         )
 
     @unittest.mock.patch("nordigen_lib.matched_requisition")
@@ -195,25 +188,20 @@ class TestRequisition(unittest.TestCase):
 
         LOGGER = MagicMock()
         fn_create = MagicMock()
-        fn_initiate = MagicMock()
         fn_remove = MagicMock()
         mocked_matched_requisition.return_value = None
 
         fn_create.return_value = {
             "id": "foobar-id",
-        }
-        fn_initiate.return_value = {
-            "initiate": "https://example.com/whatever",
+            "link": "https://example.com/whatever",
         }
 
         res = get_or_create_requisition(
             fn_create=fn_create,
-            fn_initiate=fn_initiate,
             fn_remove=fn_remove,
             requisitions=[],
             reference="ref",
-            enduser_id="user",
-            aspsp_id="aspsp",
+            institution_id="aspsp",
             LOGGER=LOGGER,
         )
 
@@ -221,15 +209,13 @@ class TestRequisition(unittest.TestCase):
         fn_create.assert_called_with(
             redirect="https://127.0.0.1/",
             reference="ref",
-            enduser_id="user",
-            agreements=[],
+            institution_id="aspsp",
         )
 
         self.assertEqual(
             {
                 "id": "foobar-id",
-                "initiate": "https://example.com/whatever",
-                "requires_auth": True,
+                "link": "https://example.com/whatever",
             },
             res,
         )
@@ -239,42 +225,30 @@ class TestRequisition(unittest.TestCase):
 
         LOGGER = MagicMock()
         fn_create = MagicMock()
-        fn_initiate = MagicMock()
         fn_remove = MagicMock()
         mocked_matched_requisition.return_value = {
             "id": "req-id",
             "status": "not-LN",
-        }
-
-        fn_initiate.return_value = {
-            "initiate": "https://example.com/whatever",
+            "link": "https://example.com/whatever",
         }
 
         res = get_or_create_requisition(
             fn_create=fn_create,
-            fn_initiate=fn_initiate,
             fn_remove=fn_remove,
             requisitions=[],
             reference="ref",
-            enduser_id="user",
-            aspsp_id="aspsp",
+            institution_id="aspsp",
             LOGGER=LOGGER,
         )
 
         fn_create.assert_not_called()
         fn_remove.assert_not_called()
 
-        fn_initiate.assert_called_with(
-            id="req-id",
-            aspsp_id="aspsp",
-        )
-
         self.assertEqual(
             {
                 "id": "req-id",
                 "status": "not-LN",
-                "initiate": "https://example.com/whatever",
-                "requires_auth": True,
+                "link": "https://example.com/whatever",
             },
             res,
         )
@@ -284,7 +258,6 @@ class TestRequisition(unittest.TestCase):
 
         LOGGER = MagicMock()
         fn_create = MagicMock()
-        fn_initiate = MagicMock()
         fn_remove = MagicMock()
         mocked_matched_requisition.return_value = {
             "id": "req-id",
@@ -293,18 +266,15 @@ class TestRequisition(unittest.TestCase):
 
         res = get_or_create_requisition(
             fn_create=fn_create,
-            fn_initiate=fn_initiate,
             fn_remove=fn_remove,
             requisitions=[],
             reference="ref",
-            enduser_id="user",
-            aspsp_id="aspsp",
+            institution_id="aspsp",
             LOGGER=LOGGER,
         )
 
         fn_create.assert_not_called()
         fn_remove.assert_not_called()
-        fn_initiate.assert_not_called()
 
         self.assertEqual(
             {
@@ -345,13 +315,13 @@ class TestGetAccounts(unittest.TestCase):
         client.requisitions.list.return_value = {"results": []}
 
         CONST = {
-            "ASPSP_ID": "aspsp_id",
+            "INSTITUTION_ID": "institution_id",
             "IGNORE_ACCOUNTS": "ignore_accounts",
             "ENDUSER_ID": "enduser_id",
         }
 
         LOGGER = MagicMock()
-        configs = [{"enduser_id": "user", "aspsp_id": "aspsp", "ignore_accounts": []}]
+        configs = [{"enduser_id": "user", "institution_id": "aspsp", "ignore_accounts": []}]
 
         mocked_get_or_create_requisition.return_value = {"id": "req-id", "accounts": [1, 2]}
         mocked_get_account.return_value = {"foobar": "account-1"}
@@ -378,12 +348,12 @@ class TestEntry(unittest.TestCase):
         mocked_get_accounts.return_value = ["accounts"]
         mocked_client.return_value = "client instance"
 
-        config = {"foobar": {"token": "xxxx", "requisitions": []}}
-        const = {"DOMAIN": "foobar", "TOKEN": "token", "REQUISITIONS": "requisitions"}
+        config = {"foobar": {"secret_id": "xxxx", "secret_key": "yyyy", "requisitions": []}}
+        const = {"DOMAIN": "foobar", "SECRET_ID": "secret_id", "SECRET_KEY": "secret_key", "REQUISITIONS": "requisitions"}
 
         res = entry(hass=hass, config=config, CONST=const, LOGGER=LOGGER)
 
-        mocked_client.assert_called_with(token="xxxx")
+        mocked_client.assert_called_with(secret_id="xxxx", secret_key="yyyy")
         mocked_get_accounts.assert_called_with(client="client instance", configs=[], LOGGER=LOGGER, CONST=const)
         hass.helpers.discovery.load_platform.assert_called_with("sensor", "foobar", {"accounts": ["accounts"]}, config)
 

@@ -2,7 +2,7 @@
 
 import setuptools
 
-application_dependencies = ["homeassistant", "nordigen-python>=0.1.2", "voluptuous"]
+application_dependencies = ["homeassistant", "nordigen-python>=0.2.0b5", "voluptuous"]
 prod_dependencies = []
 test_dependencies = ["pytest", "parameterized", "pytest-env", "pytest-cov", "pytest-asyncio", "vcrpy", "requests-mock"]
 lint_dependencies = ["flake8", "flake8-docstrings", "black", "isort"]

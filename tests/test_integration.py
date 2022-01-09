@@ -1,24 +1,22 @@
 import unittest
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
-from nordigen_lib import entry
+from nordigen_lib import entry, Client
 
 
 class TestIntegration(unittest.TestCase):
-    @unittest.mock.patch("nordigen_lib.Client")
+    @patch("nordigen_lib.Client")
     def test_new_install(self, mocked_client):
         hass = MagicMock()
         LOGGER = MagicMock()
 
-        clinet_instance = MagicMock()
-        mocked_client.return_value = clinet_instance
-
         config = {
             "foobar": {
-                "token": "xxxx",
+                "secret_id": "xxxx",
+                "secret_key": "yyyy",
                 "requisitions": [
                     {
-                        "aspsp_id": "aspsp_123",
+                        "institution_id": "aspsp_123",
                         "enduser_id": "user_123",
                         "ignore": [],
                     }
@@ -27,29 +25,31 @@ class TestIntegration(unittest.TestCase):
         }
         const = {
             "DOMAIN": "foobar",
-            "TOKEN": "token",
+            "SECRET_ID": "secret_id",
+            "SECRET_KEY": "secret_key",
             "REQUISITIONS": "requisitions",
-            "ASPSP_ID": "aspsp_id",
+            "INSTITUTION_ID": "institution_id",
             "ENDUSER_ID": "enduser_id",
             "IGNORE_ACCOUNTS": "ignore",
         }
 
-        clinet_instance.requisitions.list.return_value = {"results": []}
+        client = Client(secret_id="xxxx", secret_key="xxxx")
+        client.requisitions.get = MagicMock(side_effect=[
+            {"results": []},  # call 1: first call has no requisitions
+        ])
+        client.requisitions.post = MagicMock(side_effect=[
+            {"id": "req-123", "status": "CR", "link": "https://example.com/whoohooo"},  # call 2: initiate requisition
+        ])
+        mocked_client.return_value = client
 
-        clinet_instance.requisitions.create.return_value = {
-            "id": "req-123",
-            "status": "CR",
-        }
+        print(("mocked client: ", client))
 
-        clinet_instance.requisitions.initiate.return_value = {"initiate": "https://example.com/whoohooo"}
+        # catch depreciated warning
+        with self.assertWarns(DeprecationWarning):
+            entry(hass=hass, config=config, CONST=const, LOGGER=LOGGER)
 
-        entry(hass=hass, config=config, CONST=const, LOGGER=LOGGER)
-
-        clinet_instance.requisitions.create.assert_called_once()
-        clinet_instance.requisitions.initiate.assert_called_once()
-        clinet_instance.requisitions.list.assert_called_once()
-
-        clinet_instance.requisitions.initiate.assert_called_with(id="req-123", aspsp_id="aspsp_123")
+        client.requisitions.post.assert_called_once()
+        client.requisitions.get.assert_called_once()
 
     @unittest.mock.patch("nordigen_lib.Client")
     def test_existing_install(self, mocked_client):
@@ -61,17 +61,18 @@ class TestIntegration(unittest.TestCase):
 
         config = {
             "foobar": {
-                "token": "xxxx",
+                "secret_id": "xxxx",
+                "secret_key": "yyyy",
                 "requisitions": [
                     {
-                        "aspsp_id": "aspsp_123",
+                        "institution_id": "aspsp_123",
                         "enduser_id": "user_123",
                         "ignore": [
                             "resourceId-123",
                         ],
                     },
                     {
-                        "aspsp_id": "aspsp_321",
+                        "institution_id": "aspsp_321",
                         "enduser_id": "user_321",
                         "ignore": [],
                     },
@@ -80,9 +81,10 @@ class TestIntegration(unittest.TestCase):
         }
         const = {
             "DOMAIN": "foobar",
-            "TOKEN": "token",
+            "SECRET_ID": "secret_id",
+            "SECRET_KEY": "secret_key",
             "REQUISITIONS": "requisitions",
-            "ASPSP_ID": "aspsp_id",
+            "INSTITUTION_ID": "institution_id",
             "ENDUSER_ID": "enduser_id",
             "IGNORE_ACCOUNTS": "ignore",
         }
@@ -157,7 +159,7 @@ class TestIntegration(unittest.TestCase):
                     {
                         "bban": None,
                         "bic": None,
-                        "config": {"aspsp_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
+                        "config": {"institution_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
                         "currency": None,
                         "iban": "iban-123",
                         "id": "account-1",
@@ -177,7 +179,7 @@ class TestIntegration(unittest.TestCase):
                     {
                         "bban": "bban-123",
                         "bic": None,
-                        "config": {"aspsp_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
+                        "config": {"institution_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
                         "currency": None,
                         "iban": None,
                         "id": "account-2",
@@ -198,7 +200,7 @@ class TestIntegration(unittest.TestCase):
                     {
                         "bban": None,
                         "bic": None,
-                        "config": {"aspsp_id": "aspsp_321", "enduser_id": "user_321", "ignore": []},
+                        "config": {"institution_id": "aspsp_321", "enduser_id": "user_321", "ignore": []},
                         "currency": None,
                         "iban": "yee-haa",
                         "id": "account-a",
@@ -220,10 +222,11 @@ class TestIntegration(unittest.TestCase):
             {
                 "foobar": {
                     "requisitions": [
-                        {"aspsp_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
-                        {"aspsp_id": "aspsp_321", "enduser_id": "user_321", "ignore": []},
+                        {"institution_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
+                        {"institution_id": "aspsp_321", "enduser_id": "user_321", "ignore": []},
                     ],
-                    "token": "xxxx",
+                    "secret_id": "xxxx",
+                    "secret_key": "yyyy",
                 }
             },
         )

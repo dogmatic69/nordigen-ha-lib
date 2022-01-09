@@ -1,6 +1,6 @@
 import requests
 
-from nordigen import Client
+from nordigen import wrapper as Client
 
 PLATFORMS = ["sensor"]
 
@@ -10,12 +10,13 @@ def config_schema(vol, cv, CONST):
         {
             CONST["DOMAIN"]: vol.Schema(
                 {
-                    vol.Required(CONST["TOKEN"]): cv.string,
+                    vol.Required(CONST["SECRET_ID"]): cv.string,
+                    vol.Required(CONST["SECRET_KEY"]): cv.string,
                     vol.Optional(CONST["DEBUG"], default=False): cv.string,
                     vol.Required(CONST["REQUISITIONS"]): [
                         {
                             vol.Required(CONST["ENDUSER_ID"]): cv.string,
-                            vol.Required(CONST["ASPSP_ID"]): cv.string,
+                            vol.Required(CONST["INSTITUTION_ID"]): cv.string,
                             vol.Optional(CONST["REFRESH_RATE"], default=240): cv.string,
                             vol.Optional(CONST["AVAILABLE_BALANCE"], default=True): cv.string,
                             vol.Optional(CONST["BOOKED_BALANCE"], default=True): cv.string,
@@ -35,13 +36,13 @@ def config_schema(vol, cv, CONST):
 def get_config(configs, requisition):
     """Get the associated config."""
     for config in configs:
-        ref = "{}-{}".format(config["enduser_id"], config["aspsp_id"])
+        ref = "{}-{}".format(config["enduser_id"], config["institution_id"])
         if requisition["reference"] == ref:
             return config
 
 
-def get_reference(enduser_id, aspsp_id, *args, **kwargs):
-    return "{}-{}".format(enduser_id, aspsp_id)
+def get_reference(enduser_id, institution_id, *args, **kwargs):
+    return "{}-{}".format(enduser_id, institution_id)
 
 
 def unique_ref(id, account):
@@ -62,7 +63,7 @@ def get_account(fn, id, requisition, LOGGER, ignored=[], config={}):
         return
 
     if not account.get("iban"):
-        LOGGER.warn("Strange account: %s | %s", requisition, account)
+        LOGGER.warn("No iban: %s | %s", requisition, account)
 
     ref = unique_ref(id, account)
 
@@ -103,7 +104,7 @@ def matched_requisition(ref, requisitions):
     return {}
 
 
-def get_or_create_requisition(fn_create, fn_initiate, fn_remove, requisitions, reference, enduser_id, aspsp_id, LOGGER):
+def get_or_create_requisition(fn_create, fn_remove, requisitions, reference, institution_id, LOGGER):
     requisition = matched_requisition(reference, requisitions)
     if requisition and requisition.get("status") in ["EX", "SU"]:
         fn_remove(
@@ -119,26 +120,15 @@ def get_or_create_requisition(fn_create, fn_initiate, fn_remove, requisitions, r
         requisition = fn_create(
             **{
                 "redirect": "https://127.0.0.1/",
+                "institution_id": institution_id,
                 "reference": reference,
-                "enduser_id": enduser_id,
-                "agreements": [],
             }
         )
         LOGGER.debug("No requisition found, created :%s", requisition)
 
     if requisition.get("status") != "LN":
         print(requisition)
-        requisition = {
-            **requisition,
-            **fn_initiate(
-                **{
-                    "id": requisition["id"],
-                    "aspsp_id": aspsp_id,
-                }
-            ),
-            "requires_auth": True,
-        }
-        LOGGER.info("Authenticate and accept connection and restart :%s", requisition["initiate"])
+        LOGGER.info("Authenticate and accept connection and restart :%s", requisition["link"])
 
     return requisition
 
@@ -155,12 +145,10 @@ def get_accounts(client, configs, LOGGER, CONST):
     for config in configs:
         requisition = get_or_create_requisition(
             fn_create=client.requisitions.create,
-            fn_initiate=client.requisitions.initiate,
             fn_remove=client.requisitions.remove,
             requisitions=requisitions,
             reference=get_reference(**config),
-            aspsp_id=config[CONST["ASPSP_ID"]],
-            enduser_id=config[CONST["ENDUSER_ID"]],
+            institution_id=config[CONST["INSTITUTION_ID"]],
             LOGGER=LOGGER,
         )
 
@@ -170,9 +158,6 @@ def get_accounts(client, configs, LOGGER, CONST):
 
 def handle_requisition(client, config, LOGGER, CONST, requisition):
     """Handle requisition."""
-    if requisition.get("requires_auth"):
-        return [requisition]
-
     accounts = []
     LOGGER.debug("Handling requisition :%s", requisition.get("id"))
     for account_id in requisition.get("accounts", []):
@@ -198,7 +183,7 @@ def entry(hass, config, CONST, LOGGER):
         return True
 
     LOGGER.debug("config: %s", config[CONST["DOMAIN"]])
-    client = Client(token=domain_config[CONST["TOKEN"]])
+    client = Client(secret_id=domain_config[CONST["SECRET_ID"]], secret_key=domain_config[CONST["SECRET_KEY"]])
     hass.data[CONST["DOMAIN"]] = {
         "client": client,
     }
