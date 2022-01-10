@@ -3,14 +3,14 @@ from unittest.mock import MagicMock
 
 from parameterized import parameterized
 
-from nordigen_lib import (
-    config_schema,
-    entry,
+from nordigen.client import AccountClient
+from nordigen_lib import config_schema, entry, get_client, get_config
+from nordigen_lib.ng import (
     get_account,
     get_accounts,
-    get_config,
     get_or_create_requisition,
     get_reference,
+    get_requisitions,
     matched_requisition,
     requests,
     unique_ref,
@@ -61,7 +61,19 @@ class TestGetConfig(unittest.TestCase):
         self.assertEqual({"enduser_id": "user3", "institution_id": "aspsp3"}, res)
 
 
-class TestReferenc(unittest.TestCase):
+class TestGetClient(unittest.TestCase):
+    def test_basic(self):
+        res = get_client(
+            **{
+                "secret_id": "secret1",
+                "secret_key": "secret2",
+            }
+        )
+
+        self.assertIsInstance(res.account, AccountClient)
+
+
+class TestReference(unittest.TestCase):
     def test_basic(self):
         res = get_reference("user1", "aspsp1")
         self.assertEqual("user1-aspsp1", res)
@@ -77,7 +89,7 @@ class TestReferenc(unittest.TestCase):
     )
     def test_unique_ref(self, data, expected):
         res = unique_ref("id-123", data)
-        self.assertEqual(res, expected)
+        self.assertEqual(expected, res)
 
 
 class TestGetAccount(unittest.TestCase):
@@ -85,33 +97,32 @@ class TestGetAccount(unittest.TestCase):
         fn = MagicMock()
 
         fn.side_effect = requests.exceptions.HTTPError
-        res = get_account(fn, "id", {}, LOGGER=MagicMock())
+        res = get_account(fn, "id", {}, logger=MagicMock())
         self.assertEqual(None, res)
 
     def test_debug_strange_accounts(self):
         fn = MagicMock()
-        LOGGER = MagicMock()
+        logger = MagicMock()
         fn.return_value = {"account": {}}
-        get_account(fn=fn, id="id", requisition={}, LOGGER=LOGGER)
+        get_account(fn=fn, id="id", requisition={}, logger=logger)
 
-        LOGGER.warn.assert_called_with("No iban: %s | %s", {}, {})
+        logger.warn.assert_called_with("No iban: %s | %s", {}, {})
 
     def test_ignored(self):
         fn = MagicMock()
-        LOGGER = MagicMock()
+        logger = MagicMock()
         fn.return_value = {"account": {"iban": 123}}
-        get_account(fn=fn, id="id", requisition={}, LOGGER=LOGGER, ignored=[123])
+        get_account(fn=fn, id="id", requisition={}, logger=logger, ignored=[123])
 
-        LOGGER.info.assert_called_with("Account ignored due to configuration :%s", 123)
+        logger.info.assert_called_with("Account ignored due to configuration :%s", 123)
 
     def test_normal(self):
         fn = MagicMock()
-        LOGGER = MagicMock()
+        logger = MagicMock()
         fn.return_value = {"account": {"iban": 321}}
-        res = get_account(fn=fn, id="id", requisition={"id": "req-id"}, LOGGER=LOGGER, ignored=[123])
+        res = get_account(fn=fn, id="id", requisition={"id": "req-id"}, logger=logger, ignored=[123])
 
         self.assertEqual(321, res["iban"])
-        self.assertEqual("req-id", res["requisition"]["id"])
 
 
 class TestRequisition(unittest.TestCase):
@@ -141,11 +152,12 @@ class TestRequisition(unittest.TestCase):
         )
         self.assertEqual({"reference": "erf"}, res)
 
-    @unittest.mock.patch("nordigen_lib.matched_requisition")
+    @unittest.mock.patch("nordigen_lib.ng.matched_requisition")
     def test_get_or_create_requisition_EX(self, mocked_matched_requisition):
-        LOGGER = MagicMock()
+        logger = MagicMock()
         fn_create = MagicMock()
         fn_remove = MagicMock()
+        fn_info = MagicMock()
         mocked_matched_requisition.return_value = {
             "id": "req-id",
             "status": "EX",
@@ -159,10 +171,12 @@ class TestRequisition(unittest.TestCase):
         res = get_or_create_requisition(
             fn_create=fn_create,
             fn_remove=fn_remove,
+            fn_info=fn_info,
             requisitions=[],
             reference="ref",
             institution_id="aspsp",
-            LOGGER=LOGGER,
+            logger=logger,
+            config={},
         )
 
         fn_remove.assert_called_with(
@@ -176,19 +190,28 @@ class TestRequisition(unittest.TestCase):
         )
 
         self.assertEqual(
-            res,
             {
                 "id": "foobar-id",
                 "link": "https://example.com/whatever",
+                "config": {},
+                "details": {
+                    "id": "N26_NTSBDEB1",
+                    "name": "N26 Bank",
+                    "bic": "NTSBDEB1",
+                    "transaction_total_days": "730",
+                    "logo": "https://cdn.nordigen.com/ais/N26_NTSBDEB1.png",
+                },
             },
+            res,
         )
 
-    @unittest.mock.patch("nordigen_lib.matched_requisition")
+    @unittest.mock.patch("nordigen_lib.ng.matched_requisition")
     def test_get_or_create_requisition_not_exist(self, mocked_matched_requisition):
 
-        LOGGER = MagicMock()
+        logger = MagicMock()
         fn_create = MagicMock()
         fn_remove = MagicMock()
+        fn_info = MagicMock()
         mocked_matched_requisition.return_value = None
 
         fn_create.return_value = {
@@ -199,10 +222,12 @@ class TestRequisition(unittest.TestCase):
         res = get_or_create_requisition(
             fn_create=fn_create,
             fn_remove=fn_remove,
+            fn_info=fn_info,
             requisitions=[],
             reference="ref",
             institution_id="aspsp",
-            LOGGER=LOGGER,
+            logger=logger,
+            config={},
         )
 
         fn_remove.assert_not_called()
@@ -216,16 +241,25 @@ class TestRequisition(unittest.TestCase):
             {
                 "id": "foobar-id",
                 "link": "https://example.com/whatever",
+                "config": {},
+                "details": {
+                    "id": "N26_NTSBDEB1",
+                    "name": "N26 Bank",
+                    "bic": "NTSBDEB1",
+                    "transaction_total_days": "730",
+                    "logo": "https://cdn.nordigen.com/ais/N26_NTSBDEB1.png",
+                },
             },
             res,
         )
 
-    @unittest.mock.patch("nordigen_lib.matched_requisition")
+    @unittest.mock.patch("nordigen_lib.ng.matched_requisition")
     def test_get_or_create_requisition_not_linked(self, mocked_matched_requisition):
 
-        LOGGER = MagicMock()
+        logger = MagicMock()
         fn_create = MagicMock()
         fn_remove = MagicMock()
+        fn_info = MagicMock()
         mocked_matched_requisition.return_value = {
             "id": "req-id",
             "status": "not-LN",
@@ -235,10 +269,12 @@ class TestRequisition(unittest.TestCase):
         res = get_or_create_requisition(
             fn_create=fn_create,
             fn_remove=fn_remove,
+            fn_info=fn_info,
             requisitions=[],
             reference="ref",
             institution_id="aspsp",
-            LOGGER=LOGGER,
+            logger=logger,
+            config={},
         )
 
         fn_create.assert_not_called()
@@ -249,16 +285,25 @@ class TestRequisition(unittest.TestCase):
                 "id": "req-id",
                 "status": "not-LN",
                 "link": "https://example.com/whatever",
+                "config": {},
+                "details": {
+                    "id": "N26_NTSBDEB1",
+                    "name": "N26 Bank",
+                    "bic": "NTSBDEB1",
+                    "transaction_total_days": "730",
+                    "logo": "https://cdn.nordigen.com/ais/N26_NTSBDEB1.png",
+                },
             },
             res,
         )
 
-    @unittest.mock.patch("nordigen_lib.matched_requisition")
+    @unittest.mock.patch("nordigen_lib.ng.matched_requisition")
     def test_get_or_create_requisition_valid(self, mocked_matched_requisition):
 
-        LOGGER = MagicMock()
+        logger = MagicMock()
         fn_create = MagicMock()
         fn_remove = MagicMock()
+        fn_info = MagicMock()
         mocked_matched_requisition.return_value = {
             "id": "req-id",
             "status": "LN",
@@ -267,10 +312,12 @@ class TestRequisition(unittest.TestCase):
         res = get_or_create_requisition(
             fn_create=fn_create,
             fn_remove=fn_remove,
+            fn_info=fn_info,
             requisitions=[],
             reference="ref",
             institution_id="aspsp",
-            LOGGER=LOGGER,
+            logger=logger,
+            config={},
         )
 
         fn_create.assert_not_called()
@@ -280,6 +327,14 @@ class TestRequisition(unittest.TestCase):
             {
                 "id": "req-id",
                 "status": "LN",
+                "config": {},
+                "details": {
+                    "id": "N26_NTSBDEB1",
+                    "name": "N26 Bank",
+                    "bic": "NTSBDEB1",
+                    "transaction_total_days": "730",
+                    "logo": "https://cdn.nordigen.com/ais/N26_NTSBDEB1.png",
+                },
             },
             res,
         )
@@ -288,73 +343,95 @@ class TestRequisition(unittest.TestCase):
 class TestGetAccounts(unittest.TestCase):
     def test_api_exception(self):
         client = MagicMock()
-        LOGGER = MagicMock()
+        logger = MagicMock()
 
         HTTPError = requests.exceptions.HTTPError()
         client.requisitions.list.side_effect = HTTPError
 
-        res = get_accounts(client=client, configs=[], LOGGER=LOGGER, CONST={})
+        res = get_requisitions(client=client, configs={}, logger=logger, const={})
 
         self.assertEqual([], res)
-        LOGGER.error.assert_called_with("Unable to fetch Nordigen requisitions: %s", HTTPError)
+        logger.error.assert_called_with("Unable to fetch Nordigen requisitions: %s", HTTPError)
 
     def test_key_error(self):
         client = MagicMock()
-        LOGGER = MagicMock()
+        logger = MagicMock()
 
         client.requisitions.list.return_value = {}
 
-        res = get_accounts(client=client, configs=[], LOGGER=LOGGER, CONST={})
+        res = get_accounts(client=client, requisitions=[], logger=logger, const={})
 
         self.assertEqual([], res)
 
-    @unittest.mock.patch("nordigen_lib.get_account")
-    @unittest.mock.patch("nordigen_lib.get_or_create_requisition")
-    def test_works(self, mocked_get_or_create_requisition, mocked_get_account):
+    @unittest.mock.patch("nordigen_lib.ng.get_account")
+    def test_works(self, mocked_get_account):
         client = MagicMock()
         client.requisitions.list.return_value = {"results": []}
 
-        CONST = {
+        const = {
             "INSTITUTION_ID": "institution_id",
             "IGNORE_ACCOUNTS": "ignore_accounts",
             "ENDUSER_ID": "enduser_id",
         }
 
-        LOGGER = MagicMock()
-        configs = [{"enduser_id": "user", "institution_id": "aspsp", "ignore_accounts": []}]
+        logger = MagicMock()
 
-        mocked_get_or_create_requisition.return_value = {"id": "req-id", "accounts": [1, 2]}
-        mocked_get_account.return_value = {"foobar": "account-1"}
+        mocked_get_account.side_effect = [
+            {"foobar": "account-1"},
+            {"foobar": "account-2"},
+            {"foobar": "account-3"},
+        ]
 
-        res = get_accounts(client=client, configs=configs, LOGGER=LOGGER, CONST=CONST)
-        self.assertEqual([{"foobar": "account-1"}, {"foobar": "account-1"}], res)
+        requisitions = [
+            {"id": "req-1", "accounts": [1, 2], "config": {"ignore_accounts": []}},
+            {"id": "req-2", "accounts": [3], "config": {"ignore_accounts": []}},
+        ]
+        res = get_accounts(client=client, requisitions=requisitions, logger=logger, const=const)
+        self.assertEqual(
+            [
+                {"foobar": "account-1"},
+                {"foobar": "account-2"},
+                {"foobar": "account-3"},
+            ],
+            res,
+        )
 
 
 class TestEntry(unittest.TestCase):
-    @unittest.mock.patch("nordigen_lib.Client")
+    @unittest.mock.patch("nordigen_lib.ng.Client")
     def test_not_configured(self, mocked_client):
-        LOGGER = MagicMock()
-        res = entry(hass=None, config={}, CONST={"DOMAIN": "foo"}, LOGGER=LOGGER)
-        LOGGER.warning.assert_called_with("Nordigen not configured")
+        logger = MagicMock()
+        res = entry(hass=None, config={}, const={"DOMAIN": "foo"}, logger=logger)
+        logger.warning.assert_called_with("Nordigen not configured")
 
         self.assertTrue(res)
 
+    @unittest.mock.patch("nordigen_lib.get_requisitions")
     @unittest.mock.patch("nordigen_lib.get_accounts")
-    @unittest.mock.patch("nordigen_lib.Client")
-    def test_entry(self, mocked_client, mocked_get_accounts):
+    @unittest.mock.patch("nordigen_lib.get_client")
+    def test_entry(self, mocked_get_client, mocked_get_accounts, mocked_get_requisitions):
         hass = MagicMock()
-        LOGGER = MagicMock()
+        client = MagicMock()
+        logger = MagicMock()
 
-        mocked_get_accounts.return_value = ["accounts"]
-        mocked_client.return_value = "client instance"
+        mocked_get_accounts.return_value = ["account"]
+        mocked_get_requisitions.return_value = ["requisition"]
+        mocked_get_client.return_value = client
 
         config = {"foobar": {"secret_id": "xxxx", "secret_key": "yyyy", "requisitions": []}}
-        const = {"DOMAIN": "foobar", "SECRET_ID": "secret_id", "SECRET_KEY": "secret_key", "REQUISITIONS": "requisitions"}
+        const = {
+            "DOMAIN": "foobar",
+            "SECRET_ID": "secret_id",
+            "SECRET_KEY": "secret_key",
+            "REQUISITIONS": "requisitions",
+        }
 
-        res = entry(hass=hass, config=config, CONST=const, LOGGER=LOGGER)
+        res = entry(hass=hass, config=config, const=const, logger=logger)
 
-        mocked_client.assert_called_with(secret_id="xxxx", secret_key="yyyy")
-        mocked_get_accounts.assert_called_with(client="client instance", configs=[], LOGGER=LOGGER, CONST=const)
-        hass.helpers.discovery.load_platform.assert_called_with("sensor", "foobar", {"accounts": ["accounts"]}, config)
+        mocked_get_client.assert_called_with(secret_id="xxxx", secret_key="yyyy")
+        mocked_get_accounts.assert_called_with(client=client, requisitions=["requisition"], logger=logger, const=const)
+        hass.helpers.discovery.load_platform.assert_called_with(
+            "sensor", "foobar", {"accounts": ["account"], "requisitions": ["requisition"]}, config
+        )
 
         self.assertTrue(res)

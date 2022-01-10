@@ -1,14 +1,15 @@
 import unittest
 from unittest.mock import MagicMock, call, patch
 
-from nordigen_lib import entry, Client
+from nordigen_lib import entry
+from nordigen_lib.ng import get_client
 
 
 class TestIntegration(unittest.TestCase):
-    @patch("nordigen_lib.Client")
-    def test_new_install(self, mocked_client):
+    @patch("nordigen_lib.get_client")
+    def test_new_install(self, mocked_get_client):
         hass = MagicMock()
-        LOGGER = MagicMock()
+        logger = MagicMock()
 
         config = {
             "foobar": {
@@ -33,31 +34,39 @@ class TestIntegration(unittest.TestCase):
             "IGNORE_ACCOUNTS": "ignore",
         }
 
-        client = Client(secret_id="xxxx", secret_key="xxxx")
-        client.requisitions.get = MagicMock(side_effect=[
-            {"results": []},  # call 1: first call has no requisitions
-        ])
-        client.requisitions.post = MagicMock(side_effect=[
-            {"id": "req-123", "status": "CR", "link": "https://example.com/whoohooo"},  # call 2: initiate requisition
-        ])
-        mocked_client.return_value = client
+        client = get_client(secret_id="xxxx", secret_key="xxxx")
+        client.requisitions.get = MagicMock(
+            side_effect=[
+                {"results": []},  # call 1: first call has no requisitions
+            ]
+        )
+        client.requisitions.post = MagicMock(
+            side_effect=[
+                {
+                    "id": "req-123",
+                    "status": "CR",
+                    "link": "https://example.com/whoohooo",
+                },  # call 2: initiate requisition
+            ]
+        )
+        mocked_get_client.return_value = client
 
         print(("mocked client: ", client))
 
         # catch depreciated warning
         with self.assertWarns(DeprecationWarning):
-            entry(hass=hass, config=config, CONST=const, LOGGER=LOGGER)
+            entry(hass=hass, config=config, const=const, logger=logger)
 
         client.requisitions.post.assert_called_once()
         client.requisitions.get.assert_called_once()
 
-    @unittest.mock.patch("nordigen_lib.Client")
-    def test_existing_install(self, mocked_client):
+    @unittest.mock.patch("nordigen_lib.get_client")
+    def test_existing_install(self, mocked_get_client):
         hass = MagicMock()
-        LOGGER = MagicMock()
+        logger = MagicMock()
 
         clinet_instance = MagicMock()
-        mocked_client.return_value = clinet_instance
+        mocked_get_client.return_value = clinet_instance
 
         config = {
             "foobar": {
@@ -137,7 +146,7 @@ class TestIntegration(unittest.TestCase):
             },
         ]
 
-        entry(hass=hass, config=config, CONST=const, LOGGER=LOGGER)
+        entry(hass=hass, config=config, const=const, logger=logger)
 
         clinet_instance.requisitions.create.assert_not_called()
         clinet_instance.requisitions.initiate.assert_not_called()
@@ -159,64 +168,82 @@ class TestIntegration(unittest.TestCase):
                     {
                         "bban": None,
                         "bic": None,
-                        "config": {"institution_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
                         "currency": None,
                         "iban": "iban-123",
                         "id": "account-1",
                         "name": None,
                         "owner": None,
                         "product": None,
-                        "requisition": {
-                            "enduser_id": None,
-                            "id": "req-123",
-                            "redirect": None,
-                            "reference": "user_123-aspsp_123",
-                            "status": "LN",
-                        },
                         "status": None,
                         "unique_ref": "iban-123",
                     },
                     {
                         "bban": "bban-123",
                         "bic": None,
-                        "config": {"institution_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
                         "currency": None,
                         "iban": None,
                         "id": "account-2",
                         "name": None,
                         "owner": None,
                         "product": None,
-                        "requisition": {
-                            "enduser_id": None,
-                            "id": "req-123",
-                            "redirect": None,
-                            "reference": "user_123-aspsp_123",
-                            "status": "LN",
-                        },
                         "status": None,
                         "unique_ref": "bban-123",
                     },
                     {
                         "bban": None,
                         "bic": None,
-                        "config": {"institution_id": "aspsp_321", "enduser_id": "user_321", "ignore": []},
                         "currency": None,
                         "iban": "yee-haa",
                         "id": "account-a",
                         "name": None,
                         "owner": None,
                         "product": None,
-                        "requisition": {
-                            "enduser_id": None,
-                            "id": "req-321",
-                            "redirect": None,
-                            "reference": "user_321-aspsp_321",
-                            "status": "LN",
-                        },
                         "status": None,
                         "unique_ref": "yee-haa",
                     },
-                ]
+                ],
+                "requisitions": [
+                    {
+                        "config": {
+                            "enduser_id": "user_123",
+                            "ignore": ["resourceId-123"],
+                            "institution_id": "aspsp_123",
+                        },
+                        "accounts": [
+                            "account-1",
+                            "account-2",
+                            "account-3",
+                        ],
+                        "details": {
+                            "bic": "NTSBDEB1",
+                            "id": "N26_NTSBDEB1",
+                            "logo": "https://cdn.nordigen.com/ais/N26_NTSBDEB1.png",
+                            "name": "N26 Bank",
+                            "transaction_total_days": "730",
+                        },
+                        "id": "req-123",
+                        "reference": "user_123-aspsp_123",
+                        "status": "LN",
+                    },
+                    {
+                        "config": {
+                            "enduser_id": "user_321",
+                            "ignore": [],
+                            "institution_id": "aspsp_321",
+                        },
+                        "accounts": ["account-a"],
+                        "details": {
+                            "bic": "NTSBDEB1",
+                            "id": "N26_NTSBDEB1",
+                            "logo": "https://cdn.nordigen.com/ais/N26_NTSBDEB1.png",
+                            "name": "N26 Bank",
+                            "transaction_total_days": "730",
+                        },
+                        "id": "req-321",
+                        "reference": "user_321-aspsp_321",
+                        "status": "LN",
+                    },
+                ],
             },
             {
                 "foobar": {
