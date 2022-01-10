@@ -172,7 +172,7 @@ def handle_requisition(client, config, LOGGER, CONST, requisition):
             )
         )
 
-    return accounts
+    return [account for account in accounts if account]
 
 
 def entry(hass, config, CONST, LOGGER):

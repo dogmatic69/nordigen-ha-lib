@@ -196,7 +196,6 @@ class TestIntegration(unittest.TestCase):
                         "status": None,
                         "unique_ref": "bban-123",
                     },
-                    None,
                     {
                         "bban": None,
                         "bic": None,
