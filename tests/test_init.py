@@ -346,27 +346,27 @@ class TestGetAccounts(unittest.TestCase):
         logger.error.assert_called_with("Unable to fetch Nordigen requisitions: %s", HTTPError)
 
     def test_key_error(self):
+        fn = MagicMock()
         client = MagicMock()
         logger = MagicMock()
 
         client.requisitions.list.return_value = {}
 
-        res = get_accounts(client=client, requisition={}, logger=logger, ignored=[])
+        res = get_accounts(fn=fn, requisition={}, logger=logger, ignored=[])
 
         self.assertEqual([], res)
 
     def test_ignored(self):
-        client = MagicMock()
+        fn = MagicMock()
         logger = MagicMock()
 
-        get_accounts(client=client, requisition={"accounts": [123]}, logger=logger, ignored=[123])
+        get_accounts(fn=fn, requisition={"accounts": [123]}, logger=logger, ignored=[123])
 
         logger.info.assert_called_with("Account ignored due to configuration :%s", 123)
 
     @unittest.mock.patch("nordigen_lib.ng.get_account")
     def test_works(self, mocked_get_account):
-        client = MagicMock()
-        client.requisitions.list.return_value = {"results": []}
+        fn = MagicMock()
 
         logger = MagicMock()
 
@@ -381,7 +381,7 @@ class TestGetAccounts(unittest.TestCase):
             "accounts": [1, 2],
             "config": {"ignore_accounts": []},
         }
-        res = get_accounts(client=client, requisition=requisition, logger=logger, ignored=[])
+        res = get_accounts(fn=fn, requisition=requisition, logger=logger, ignored=[])
         self.assertEqual(
             [
                 {"foobar": "account-1"},

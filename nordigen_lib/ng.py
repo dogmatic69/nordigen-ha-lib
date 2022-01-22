@@ -8,7 +8,7 @@ def get_client(**kwargs):
 
 
 def get_reference(enduser_id, institution_id, *args, **kwargs):
-    return "{}-{}".format(enduser_id, institution_id)
+    return f"{enduser_id}-{institution_id}"
 
 
 def unique_ref(id, account):
@@ -86,7 +86,7 @@ def get_or_create_requisition(fn_create, fn_remove, fn_info, requisitions, refer
     return requisition
 
 
-def get_accounts(client, requisition, logger, ignored):
+def get_accounts(fn, requisition, logger, ignored):
     accounts = []
     for account_id in requisition.get("accounts", []):
         if account_id in ignored:
@@ -95,13 +95,13 @@ def get_accounts(client, requisition, logger, ignored):
 
         accounts.append(
             get_account(
-                fn=client.account.details,
+                fn=fn,
                 id=account_id,
                 requisition=requisition,
                 logger=logger,
             )
         )
-    return accounts
+    return [account for account in accounts if account]
 
 
 def get_account(fn, id, requisition, logger):

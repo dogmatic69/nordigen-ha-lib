@@ -51,9 +51,6 @@ class TestIntegration(unittest.TestCase):
         )
         mocked_get_client.return_value = client
 
-        print(("mocked client: ", client))
-
-        # catch depreciated warning
         with self.assertWarns(DeprecationWarning):
             entry(hass=hass, config=config, const=const, logger=logger)
 

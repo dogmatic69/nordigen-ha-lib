@@ -1,12 +1,27 @@
 """Platform for sensor integration."""
 import random
+import re
 from datetime import datetime, timedelta
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator, UpdateFailed
 
 from .ng import get_accounts
 
-DEFAULT_BALANCE_TYPES = ["Interim", "Available"]
+pattern = re.compile(r"(?<!^)(?=[A-Z])")
+
+DEFAULT_BALANCE_TYPES = [
+    "expected",
+    "closingBooked",
+    "openingBooked",
+    "interimAvailable",
+    "interimBooked",
+    "forwardAvailable",
+    "nonInvoiced",
+]
+
+
+def snake(name):
+    return pattern.sub("_", name).lower()
 
 
 def random_balance(*args, **kwargs):
@@ -81,14 +96,14 @@ def build_coordinator(hass, logger, updater, interval, reference):
     return DataUpdateCoordinator(
         hass,
         logger,
-        name="nordigen-balance-{}".format(reference),
+        name=f"nordigen-balance-{reference}",
         update_method=updater,
         update_interval=interval,
     )
 
 
 def get_balance_types(logger, config, field, defaults=DEFAULT_BALANCE_TYPES):
-    ret = [balance_type for balance_type in config.get(field, defaults)]
+    ret = [balance_type for balance_type in config.get(field) or defaults]
     logger.debug("configured balance types: %s", ret)
     return ret
 
@@ -118,7 +133,7 @@ async def build_account_sensors(hass, logger, account, const, debug):
             BalanceSensor(
                 domain=const["DOMAIN"],
                 icons=const["ICON"],
-                balance_type=f"interim{balance_type}",
+                balance_type=balance_type,
                 coordinator=balance_coordinator,
                 **account,
             )
@@ -134,7 +149,7 @@ async def build_requisition_sensor(hass, logger, requisition, const, debug):
         fn=hass.data[const["DOMAIN"]]["client"].requisitions.by_id,
         requisition_id=requisition["id"],
     )
-    interval = timedelta(minutes=2)
+    interval = timedelta(seconds=15)
     coordinator = build_coordinator(
         hass=hass, logger=logger, updater=updater, interval=interval, reference=requisition.get("reference")
     )
@@ -180,13 +195,14 @@ class RequisitionSensor(CoordinatorEntity):
         self._logger = logger
 
         self._id = kwargs["id"]
-        self._enduser_id = kwargs["enduser_id"]
         self._reference = kwargs["reference"]
-        self._initiate = kwargs["initiate"]
         self._icons = kwargs["icons"]
+        self._link = kwargs["link"]
         self._ignored_accounts = kwargs["ignored_accounts"]
         self._const = kwargs["const"]
         self._debug = kwargs.get("debug", False)
+        self._config = kwargs["config"]
+        self._details = kwargs["details"]
         self._account_sensors = {}
 
         super().__init__(coordinator)
@@ -196,7 +212,7 @@ class RequisitionSensor(CoordinatorEntity):
         """Return device information."""
         return {
             "identifiers": {(self._domain, self._id)},
-            "name": "{} {}".format(self._reference, self._enduser_id),
+            "name": self._reference,
         }
 
     @property
@@ -214,29 +230,56 @@ class RequisitionSensor(CoordinatorEntity):
         """Return the sensor state."""
         return self.coordinator.data.get("status") == "LN"
 
+    def _requisition(self):
+        return {
+            "id": self._id,
+            "reference": self._reference,
+            "details": self._details,
+        }
+
+    def do_job(self, **kwargs):
+        def job():
+            return get_accounts(**kwargs)
+
+        return job
+
     async def _setup_account_sensors(self, client, accounts, ignored):
-        accounts = get_accounts(
-            client=client,
-            requisition={
-                "id": self._id,
-                "accounts": accounts,
-            },
-            logger=self._logger,
-            ignored=ignored,
+        accounts = await self.hass.async_add_executor_job(
+            self.do_job(
+                fn=client.account.details,
+                requisition={
+                    "id": self._id,
+                    "accounts": accounts,
+                },
+                logger=self._logger,
+                ignored=ignored,
+            )
         )
+        self._logger.debug(accounts)
         entities = []
         for account in accounts:
+            self._logger.debug("account: %s", account)
+
             if self._account_sensors.get(account["unique_ref"]):
                 continue
+
             self._account_sensors[account["unique_ref"]] = True
             entities.extend(
                 await build_account_sensors(
-                    hass=self.hass, logger=self._logger, account=account, const=self._const, debug=self._debug
+                    hass=self.hass,
+                    logger=self._logger,
+                    const=self._const,
+                    debug=self._debug,
+                    account={
+                        **account,
+                        "config": self._config,
+                        "requisition": self._requisition(),
+                    },
                 )
             )
 
         if entities:
-            self.platform.async_add_entities(entities)
+            await self.platform.async_add_entities(entities)
 
     @property
     def state_attributes(self):
@@ -251,21 +294,23 @@ class RequisitionSensor(CoordinatorEntity):
             "consider removing the config entry."
         )
         state = {
-            "initiate": self._initiate,
+            "link": self._link,
             "info": info,
             "accounts": self.coordinator.data.get("accounts"),
             "status": self.coordinator.data.get("status"),
             "last_update": datetime.now(),
         }
 
+        seconds = (120 if self.coordinator.data.get("status") == "LN" else 15)
+        self.coordinator.update_interval = timedelta(seconds=seconds)
+
         if self.state:
             del state["info"]
-            del state["initiate"]
+            del state["link"]
 
             sensor_job = self._setup_account_sensors(
                 client=self._client, accounts=self.coordinator.data.get("accounts"), ignored=self._ignored_accounts
             )
-            print(self.hass)
             self.hass.add_job(sensor_job)
 
         return state
@@ -326,39 +371,46 @@ class BalanceSensor(CoordinatorEntity):
     def device_info(self):
         """Return device information."""
         return dict(
-            default_manufacturer=self._requisition.get("details", {}).get("name"),
-            default_name=f"{self._bic} {self.name}",
-            identifiers={(self._domain, self.unique_id), (self._domain, self._requisition["id"])},
+            default_manufacturer="Nordigen",
+            default_name=self._requisition.get("details", {}).get("name"),
+            identifiers={(self._domain, self._requisition.get("details", {}).get("id"))},
             suggested_area="External",
             sw_version="V2",
-            via_device=self._requisition.get("id"),
         )
 
     @property
     def unique_id(self):
         """Return the ID of the sensor."""
-        return "{}-{}".format(self._unique_ref, self.balance_type)
+        return f"{self._unique_ref}-{self.balance_type}"
 
     @property
     def balance_type(self):
         """Return the sensors balance type."""
-        return self._balance_type.replace("interim", "").lower()
+        return snake(self._balance_type)
 
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "{} {}".format(self._unique_ref, self.balance_type)
+        if self._owner and self._name:
+            return f"{self._owner} {self._name} ({self.balance_type})"
+
+        if self._name:
+            return f"{self._name} {self._unique_ref} ({self.balance_type})"
+
+        return f"{self._unique_ref} ({self.balance_type})"
 
     @property
     def state(self):
         """Return the sensor state."""
+        if not self.coordinator.data[self._balance_type]:
+            return None
         return round(float(self.coordinator.data[self._balance_type]), 2)
 
     @property
     def state_attributes(self):
         """Return State attributes."""
         return {
-            "balance_type": self.balance_type,
+            "balance_type": self._balance_type,
             "iban": self._iban,
             "unique_ref": self._unique_ref,
             "name": self._name,
@@ -366,7 +418,6 @@ class BalanceSensor(CoordinatorEntity):
             "product": self._product,
             "status": self._status,
             "bic": self._bic,
-            "enduser_id": self._requisition["enduser_id"],
             "reference": self._requisition["reference"],
             "last_update": datetime.now(),
         }

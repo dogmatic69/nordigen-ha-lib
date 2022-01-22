@@ -33,7 +33,7 @@ def config_schema(vol, cv, const):
 def get_config(configs, requisition):
     """Get the associated config."""
     for config in configs:
-        ref = "{}-{}".format(config["enduser_id"], config["institution_id"])
+        ref = f"{config['enduser_id']}-{config['institution_id']}"
         if requisition["reference"] == ref:
             return config
 
