@@ -4,6 +4,10 @@ from datetime import datetime, timedelta
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator, UpdateFailed
 
+from .ng import get_accounts
+
+DEFAULT_BALANCE_TYPES = ["Interim", "Available"]
+
 
 def random_balance(*args, **kwargs):
     """Generate random balances for testing."""
@@ -28,11 +32,11 @@ def random_balance(*args, **kwargs):
     }
 
 
-def balance_update(LOGGER, async_executor, fn, account_id):
+def balance_update(logger, async_executor, fn, account_id):
     """Fetch latest information."""
 
     async def update():
-        LOGGER.debug("Getting balance for account :%s", account_id)
+        logger.debug("Getting balance for account :%s", account_id)
         try:
             data = (await async_executor(fn, account_id))["balances"]
         except Exception as err:
@@ -51,73 +55,70 @@ def balance_update(LOGGER, async_executor, fn, account_id):
             **{balance["balanceType"]: balance["balanceAmount"]["amount"] for balance in data},
         }
 
-        LOGGER.debug("balance for %s : %s", account_id, data)
+        logger.debug("balance for %s : %s", account_id, data)
         return data
 
     return update
 
 
-def requisition_update(LOGGER, async_executor, fn, requisition_id):
+def requisition_update(logger, async_executor, fn, requisition_id):
     """Fetch latest information."""
 
     async def update():
-        LOGGER.debug("Getting requisition for account :%s", requisition_id)
+        logger.debug("Getting requisition for account :%s", requisition_id)
         try:
             data = await async_executor(fn, requisition_id)
         except Exception as err:
             raise UpdateFailed(f"Error updating Nordigen sensors: {err}")
 
-        LOGGER.debug("balance for %s : %s", requisition_id, data)
+        logger.debug("balance for %s : %s", requisition_id, data)
         return data
 
     return update
 
 
-def build_coordinator(hass, LOGGER, updater, interval, reference):
+def build_coordinator(hass, logger, updater, interval, reference):
     return DataUpdateCoordinator(
         hass,
-        LOGGER,
+        logger,
         name="nordigen-balance-{}".format(reference),
         update_method=updater,
         update_interval=interval,
     )
 
 
-async def build_account_sensors(hass, LOGGER, account, CONST, debug):
-    fn = random_balance if debug else hass.data[CONST["DOMAIN"]]["client"].account.balances
+def get_balance_types(logger, config, field, defaults=DEFAULT_BALANCE_TYPES):
+    ret = [balance_type for balance_type in config.get(field, defaults)]
+    logger.debug("configured balance types: %s", ret)
+    return ret
+
+
+async def build_account_sensors(hass, logger, account, const, debug):
+    fn = random_balance if debug else hass.data[const["DOMAIN"]]["client"].account.balances
     updater = balance_update(
-        LOGGER=LOGGER,
+        logger=logger,
         async_executor=hass.async_add_executor_job,
         fn=fn,
         account_id=account["id"],
     )
-    interval = timedelta(minutes=int(account["config"][CONST["REFRESH_RATE"]]))
+    interval = timedelta(minutes=int(account["config"][const["REFRESH_RATE"]]))
     balance_coordinator = build_coordinator(
-        hass=hass, LOGGER=LOGGER, updater=updater, interval=interval, reference=account.get("unique_ref")
+        hass=hass, logger=logger, updater=updater, interval=interval, reference=account.get("unique_ref")
     )
 
     await balance_coordinator.async_config_entry_first_refresh()
 
-    LOGGER.debug("listeners: %s", balance_coordinator._listeners)
+    logger.debug("listeners: %s", balance_coordinator._listeners)
+
+    balance_types = get_balance_types(logger=logger, config=account["config"], field=const["BALANCE_TYPES"])
 
     entities = []
-    if account["config"][CONST["AVAILABLE_BALANCE"]] is not False:
+    for balance_type in balance_types:
         entities.append(
-            NordigenBalanceSensor(
-                domain=CONST["DOMAIN"],
-                icons=CONST["ICON"],
-                balance_type="interimAvailable",
-                coordinator=balance_coordinator,
-                **account,
-            )
-        )
-
-    if account["config"][CONST["BOOKED_BALANCE"]] is not False:
-        entities.append(
-            NordigenBalanceSensor(
-                domain=CONST["DOMAIN"],
-                icons=CONST["ICON"],
-                balance_type="interimBooked",
+            BalanceSensor(
+                domain=const["DOMAIN"],
+                icons=const["ICON"],
+                balance_type=f"interim{balance_type}",
                 coordinator=balance_coordinator,
                 **account,
             )
@@ -126,48 +127,67 @@ async def build_account_sensors(hass, LOGGER, account, CONST, debug):
     return entities
 
 
-async def build_unconfirmed_sensor(hass, LOGGER, requisition, CONST, debug):
+async def build_requisition_sensor(hass, logger, requisition, const, debug):
     updater = requisition_update(
-        LOGGER=LOGGER,
+        logger=logger,
         async_executor=hass.async_add_executor_job,
-        fn=hass.data[CONST["DOMAIN"]]["client"].requisitions.by_id,
+        fn=hass.data[const["DOMAIN"]]["client"].requisitions.by_id,
         requisition_id=requisition["id"],
     )
     interval = timedelta(minutes=2)
     coordinator = build_coordinator(
-        hass=hass, LOGGER=LOGGER, updater=updater, interval=interval, reference=requisition.get("reference")
+        hass=hass, logger=logger, updater=updater, interval=interval, reference=requisition.get("reference")
     )
 
     await coordinator.async_config_entry_first_refresh()
 
-    LOGGER.debug("listeners: %s", coordinator._listeners)
+    logger.debug("listeners: %s", coordinator._listeners)
 
     return [
-        NordigenUnconfirmedSensor(
-            domain=CONST["DOMAIN"],
-            icons=CONST["ICON"],
+        RequisitionSensor(
+            domain=const["DOMAIN"],
+            icons=const["ICON"],
             coordinator=coordinator,
+            client=hass.data[const["DOMAIN"]]["client"],
+            ignored_accounts=requisition["config"][const["IGNORE_ACCOUNTS"]],
+            logger=logger,
+            const=const,
+            debug=debug,
             **requisition,
         )
     ]
 
 
-async def build_sensors(hass, LOGGER, account, CONST, debug=False):
-    if account.get("requires_auth") is True:
-        return await build_unconfirmed_sensor(hass, LOGGER, account, CONST, debug)
-
-    return await build_account_sensors(hass, LOGGER, account, CONST, debug)
+async def build_sensors(hass, logger, account, const, debug=False):
+    return await build_requisition_sensor(hass=hass, logger=logger, requisition=account, const=const, debug=debug)
 
 
-class NordigenUnconfirmedSensor(CoordinatorEntity):
-    def __init__(self, coordinator, domain, id, enduser_id, reference, initiate, icons, *args, **kwargs):
+class RequisitionSensor(CoordinatorEntity):
+    _account_sensors = {}
+
+    def __init__(
+        self,
+        coordinator,
+        domain,
+        client,
+        logger,
+        *args,
+        **kwargs,
+    ):
         """Unconfirmed sensor entity."""
         self._domain = domain
-        self._id = id
-        self._enduser_id = enduser_id
-        self._reference = reference
-        self._initiate = initiate
-        self._icons = icons
+        self._client = client
+        self._logger = logger
+
+        self._id = kwargs["id"]
+        self._enduser_id = kwargs["enduser_id"]
+        self._reference = kwargs["reference"]
+        self._initiate = kwargs["initiate"]
+        self._icons = kwargs["icons"]
+        self._ignored_accounts = kwargs["ignored_accounts"]
+        self._const = kwargs["const"]
+        self._debug = kwargs.get("debug", False)
+        self._account_sensors = {}
 
         super().__init__(coordinator)
 
@@ -194,6 +214,30 @@ class NordigenUnconfirmedSensor(CoordinatorEntity):
         """Return the sensor state."""
         return self.coordinator.data.get("status") == "LN"
 
+    async def _setup_account_sensors(self, client, accounts, ignored):
+        accounts = get_accounts(
+            client=client,
+            requisition={
+                "id": self._id,
+                "accounts": accounts,
+            },
+            logger=self._logger,
+            ignored=ignored,
+        )
+        entities = []
+        for account in accounts:
+            if self._account_sensors.get(account["unique_ref"]):
+                continue
+            self._account_sensors[account["unique_ref"]] = True
+            entities.extend(
+                await build_account_sensors(
+                    hass=self.hass, logger=self._logger, account=account, const=self._const, debug=self._debug
+                )
+            )
+
+        if entities:
+            self.platform.async_add_entities(entities)
+
     @property
     def state_attributes(self):
         """Return State attributes."""
@@ -206,20 +250,25 @@ class NordigenUnconfirmedSensor(CoordinatorEntity):
             "account sensor. If you will not authenticate this service "
             "consider removing the config entry."
         )
-
-        if self.state:
-            count = len(self.coordinator.data.get("accounts"))
-            info = (
-                "Authentication is complete, restart Home Assistant to "
-                f"start collecting account data from {count} accounts."
-            )
-
-        return {
+        state = {
             "initiate": self._initiate,
             "info": info,
             "accounts": self.coordinator.data.get("accounts"),
+            "status": self.coordinator.data.get("status"),
             "last_update": datetime.now(),
         }
+
+        if self.state:
+            del state["info"]
+            del state["initiate"]
+
+            sensor_job = self._setup_account_sensors(
+                client=self._client, accounts=self.coordinator.data.get("accounts"), ignored=self._ignored_accounts
+            )
+            print(self.hass)
+            self.hass.add_job(sensor_job)
+
+        return state
 
     @property
     def icon(self):
@@ -232,7 +281,7 @@ class NordigenUnconfirmedSensor(CoordinatorEntity):
         return True
 
 
-class NordigenBalanceSensor(CoordinatorEntity):
+class BalanceSensor(CoordinatorEntity):
     """Nordigen Balance Sensor."""
 
     def __init__(
@@ -276,10 +325,14 @@ class NordigenBalanceSensor(CoordinatorEntity):
     @property
     def device_info(self):
         """Return device information."""
-        return {
-            "identifiers": {(self._domain, self._requisition["id"])},
-            "name": "{} {}".format(self._bic, self.name),
-        }
+        return dict(
+            default_manufacturer=self._requisition.get("details", {}).get("name"),
+            default_name=f"{self._bic} {self.name}",
+            identifiers={(self._domain, self.unique_id), (self._domain, self._requisition["id"])},
+            suggested_area="External",
+            sw_version="V2",
+            via_device=self._requisition.get("id"),
+        )
 
     @property
     def unique_id(self):

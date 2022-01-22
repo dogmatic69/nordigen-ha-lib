@@ -1,24 +1,23 @@
 import unittest
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, patch
 
 from nordigen_lib import entry
+from nordigen_lib.ng import get_client
 
 
 class TestIntegration(unittest.TestCase):
-    @unittest.mock.patch("nordigen_lib.Client")
-    def test_new_install(self, mocked_client):
+    @patch("nordigen_lib.get_client")
+    def test_new_install(self, mocked_get_client):
         hass = MagicMock()
-        LOGGER = MagicMock()
-
-        clinet_instance = MagicMock()
-        mocked_client.return_value = clinet_instance
+        logger = MagicMock()
 
         config = {
             "foobar": {
-                "token": "xxxx",
+                "secret_id": "xxxx",
+                "secret_key": "yyyy",
                 "requisitions": [
                     {
-                        "aspsp_id": "aspsp_123",
+                        "institution_id": "aspsp_123",
                         "enduser_id": "user_123",
                         "ignore": [],
                     }
@@ -27,51 +26,62 @@ class TestIntegration(unittest.TestCase):
         }
         const = {
             "DOMAIN": "foobar",
-            "TOKEN": "token",
+            "SECRET_ID": "secret_id",
+            "SECRET_KEY": "secret_key",
             "REQUISITIONS": "requisitions",
-            "ASPSP_ID": "aspsp_id",
+            "INSTITUTION_ID": "institution_id",
             "ENDUSER_ID": "enduser_id",
             "IGNORE_ACCOUNTS": "ignore",
         }
 
-        clinet_instance.requisitions.list.return_value = {"results": []}
+        client = get_client(secret_id="xxxx", secret_key="xxxx")
+        client.requisitions.get = MagicMock(
+            side_effect=[
+                {"results": []},  # call 1: first call has no requisitions
+            ]
+        )
+        client.requisitions.post = MagicMock(
+            side_effect=[
+                {
+                    "id": "req-123",
+                    "status": "CR",
+                    "link": "https://example.com/whoohooo",
+                },  # call 2: initiate requisition
+            ]
+        )
+        mocked_get_client.return_value = client
 
-        clinet_instance.requisitions.create.return_value = {
-            "id": "req-123",
-            "status": "CR",
-        }
+        print(("mocked client: ", client))
 
-        clinet_instance.requisitions.initiate.return_value = {"initiate": "https://example.com/whoohooo"}
+        # catch depreciated warning
+        with self.assertWarns(DeprecationWarning):
+            entry(hass=hass, config=config, const=const, logger=logger)
 
-        entry(hass=hass, config=config, CONST=const, LOGGER=LOGGER)
+        client.requisitions.post.assert_called_once()
+        client.requisitions.get.assert_called_once()
 
-        clinet_instance.requisitions.create.assert_called_once()
-        clinet_instance.requisitions.initiate.assert_called_once()
-        clinet_instance.requisitions.list.assert_called_once()
-
-        clinet_instance.requisitions.initiate.assert_called_with(id="req-123", aspsp_id="aspsp_123")
-
-    @unittest.mock.patch("nordigen_lib.Client")
-    def test_existing_install(self, mocked_client):
+    @unittest.mock.patch("nordigen_lib.get_client")
+    def test_existing_install(self, mocked_get_client):
         hass = MagicMock()
-        LOGGER = MagicMock()
+        logger = MagicMock()
 
         clinet_instance = MagicMock()
-        mocked_client.return_value = clinet_instance
+        mocked_get_client.return_value = clinet_instance
 
         config = {
             "foobar": {
-                "token": "xxxx",
+                "secret_id": "xxxx",
+                "secret_key": "yyyy",
                 "requisitions": [
                     {
-                        "aspsp_id": "aspsp_123",
+                        "institution_id": "aspsp_123",
                         "enduser_id": "user_123",
                         "ignore": [
                             "resourceId-123",
                         ],
                     },
                     {
-                        "aspsp_id": "aspsp_321",
+                        "institution_id": "aspsp_321",
                         "enduser_id": "user_321",
                         "ignore": [],
                     },
@@ -80,9 +90,10 @@ class TestIntegration(unittest.TestCase):
         }
         const = {
             "DOMAIN": "foobar",
-            "TOKEN": "token",
+            "SECRET_ID": "secret_id",
+            "SECRET_KEY": "secret_key",
             "REQUISITIONS": "requisitions",
-            "ASPSP_ID": "aspsp_id",
+            "INSTITUTION_ID": "institution_id",
             "ENDUSER_ID": "enduser_id",
             "IGNORE_ACCOUNTS": "ignore",
         }
@@ -135,95 +146,76 @@ class TestIntegration(unittest.TestCase):
             },
         ]
 
-        entry(hass=hass, config=config, CONST=const, LOGGER=LOGGER)
+        entry(hass=hass, config=config, const=const, logger=logger)
 
         clinet_instance.requisitions.create.assert_not_called()
         clinet_instance.requisitions.initiate.assert_not_called()
 
-        clinet_instance.account.details.assert_has_calls(
-            [
-                call("account-1"),
-                call("account-2"),
-                call("account-3"),
-                call("account-a"),
-            ]
-        )
+        # TODO: some how assert sensors are loaded too
+        # clinet_instance.account.details.assert_has_calls(
+        #     [
+        #         call("account-1"),
+        #         call("account-2"),
+        #         call("account-3"),
+        #         call("account-a"),
+        #     ]
+        # )
 
         hass.helpers.discovery.load_platform.assert_called_once_with(
             "sensor",
             "foobar",
             {
-                "accounts": [
+                "requisitions": [
                     {
-                        "bban": None,
-                        "bic": None,
-                        "config": {"aspsp_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
-                        "currency": None,
-                        "iban": "iban-123",
-                        "id": "account-1",
-                        "name": None,
-                        "owner": None,
-                        "product": None,
-                        "requisition": {
-                            "enduser_id": None,
-                            "id": "req-123",
-                            "redirect": None,
-                            "reference": "user_123-aspsp_123",
-                            "status": "LN",
+                        "config": {
+                            "enduser_id": "user_123",
+                            "ignore": ["resourceId-123"],
+                            "institution_id": "aspsp_123",
                         },
-                        "status": None,
-                        "unique_ref": "iban-123",
+                        "accounts": [
+                            "account-1",
+                            "account-2",
+                            "account-3",
+                        ],
+                        "details": {
+                            "bic": "NTSBDEB1",
+                            "id": "N26_NTSBDEB1",
+                            "logo": "https://cdn.nordigen.com/ais/N26_NTSBDEB1.png",
+                            "name": "N26 Bank",
+                            "transaction_total_days": "730",
+                        },
+                        "id": "req-123",
+                        "reference": "user_123-aspsp_123",
+                        "status": "LN",
                     },
                     {
-                        "bban": "bban-123",
-                        "bic": None,
-                        "config": {"aspsp_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
-                        "currency": None,
-                        "iban": None,
-                        "id": "account-2",
-                        "name": None,
-                        "owner": None,
-                        "product": None,
-                        "requisition": {
-                            "enduser_id": None,
-                            "id": "req-123",
-                            "redirect": None,
-                            "reference": "user_123-aspsp_123",
-                            "status": "LN",
+                        "config": {
+                            "enduser_id": "user_321",
+                            "ignore": [],
+                            "institution_id": "aspsp_321",
                         },
-                        "status": None,
-                        "unique_ref": "bban-123",
-                    },
-                    None,
-                    {
-                        "bban": None,
-                        "bic": None,
-                        "config": {"aspsp_id": "aspsp_321", "enduser_id": "user_321", "ignore": []},
-                        "currency": None,
-                        "iban": "yee-haa",
-                        "id": "account-a",
-                        "name": None,
-                        "owner": None,
-                        "product": None,
-                        "requisition": {
-                            "enduser_id": None,
-                            "id": "req-321",
-                            "redirect": None,
-                            "reference": "user_321-aspsp_321",
-                            "status": "LN",
+                        "accounts": ["account-a"],
+                        "details": {
+                            "bic": "NTSBDEB1",
+                            "id": "N26_NTSBDEB1",
+                            "logo": "https://cdn.nordigen.com/ais/N26_NTSBDEB1.png",
+                            "name": "N26 Bank",
+                            "transaction_total_days": "730",
                         },
-                        "status": None,
-                        "unique_ref": "yee-haa",
+                        "id": "req-321",
+                        "reference": "user_321-aspsp_321",
+                        "status": "LN",
                     },
-                ]
+                ],
             },
             {
                 "foobar": {
                     "requisitions": [
-                        {"aspsp_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
-                        {"aspsp_id": "aspsp_321", "enduser_id": "user_321", "ignore": []},
+                        {"institution_id": "aspsp_123", "enduser_id": "user_123", "ignore": ["resourceId-123"]},
+                        {"institution_id": "aspsp_321", "enduser_id": "user_321", "ignore": []},
                     ],
-                    "token": "xxxx",
+                    "secret_id": "xxxx",
+                    "secret_key": "yyyy",
                 }
             },
         )
