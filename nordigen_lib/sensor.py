@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator, UpdateFailed
 
+from .ng import get_accounts
+
 DEFAULT_BALANCE_TYPES = ["Interim", "Available"]
 
 
@@ -125,7 +127,7 @@ async def build_account_sensors(hass, logger, account, const, debug):
     return entities
 
 
-async def build_requisition_sensor(hass, logger, requisition, const):
+async def build_requisition_sensor(hass, logger, requisition, const, debug):
     updater = requisition_update(
         logger=logger,
         async_executor=hass.async_add_executor_job,
@@ -146,27 +148,46 @@ async def build_requisition_sensor(hass, logger, requisition, const):
             domain=const["DOMAIN"],
             icons=const["ICON"],
             coordinator=coordinator,
+            client=hass.data[const["DOMAIN"]]["client"],
+            ignored_accounts=requisition["config"][const["IGNORE_ACCOUNTS"]],
+            logger=logger,
+            const=const,
+            debug=debug,
             **requisition,
         )
     ]
 
 
 async def build_sensors(hass, logger, account, const, debug=False):
-    if account.get("requires_auth") is True:
-        return await build_requisition_sensor(hass=hass, logger=logger, requisition=account, const=const)
-
-    return await build_account_sensors(hass=hass, logger=logger, account=account, const=const, debug=debug)
+    return await build_requisition_sensor(hass=hass, logger=logger, requisition=account, const=const, debug=debug)
 
 
 class RequisitionSensor(CoordinatorEntity):
-    def __init__(self, coordinator, domain, id, enduser_id, reference, initiate, icons, *args, **kwargs):
+    _account_sensors = {}
+
+    def __init__(
+        self,
+        coordinator,
+        domain,
+        client,
+        logger,
+        *args,
+        **kwargs,
+    ):
         """Unconfirmed sensor entity."""
         self._domain = domain
-        self._id = id
-        self._enduser_id = enduser_id
-        self._reference = reference
-        self._initiate = initiate
-        self._icons = icons
+        self._client = client
+        self._logger = logger
+
+        self._id = kwargs["id"]
+        self._enduser_id = kwargs["enduser_id"]
+        self._reference = kwargs["reference"]
+        self._initiate = kwargs["initiate"]
+        self._icons = kwargs["icons"]
+        self._ignored_accounts = kwargs["ignored_accounts"]
+        self._const = kwargs["const"]
+        self._debug = kwargs.get("debug", False)
+        self._account_sensors = {}
 
         super().__init__(coordinator)
 
@@ -193,6 +214,30 @@ class RequisitionSensor(CoordinatorEntity):
         """Return the sensor state."""
         return self.coordinator.data.get("status") == "LN"
 
+    async def _setup_account_sensors(self, client, accounts, ignored):
+        accounts = get_accounts(
+            client=client,
+            requisition={
+                "id": self._id,
+                "accounts": accounts,
+            },
+            logger=self._logger,
+            ignored=ignored,
+        )
+        entities = []
+        for account in accounts:
+            if self._account_sensors.get(account["unique_ref"]):
+                continue
+            self._account_sensors[account["unique_ref"]] = True
+            entities.extend(
+                await build_account_sensors(
+                    hass=self.hass, logger=self._logger, account=account, const=self._const, debug=self._debug
+                )
+            )
+
+        if entities:
+            self.platform.async_add_entities(entities)
+
     @property
     def state_attributes(self):
         """Return State attributes."""
@@ -205,20 +250,25 @@ class RequisitionSensor(CoordinatorEntity):
             "account sensor. If you will not authenticate this service "
             "consider removing the config entry."
         )
-
-        if self.state:
-            count = len(self.coordinator.data.get("accounts"))
-            info = (
-                "Authentication is complete, restart Home Assistant to "
-                f"start collecting account data from {count} accounts."
-            )
-
-        return {
+        state = {
             "initiate": self._initiate,
             "info": info,
             "accounts": self.coordinator.data.get("accounts"),
+            "status": self.coordinator.data.get("status"),
             "last_update": datetime.now(),
         }
+
+        if self.state:
+            del state["info"]
+            del state["initiate"]
+
+            sensor_job = self._setup_account_sensors(
+                client=self._client, accounts=self.coordinator.data.get("accounts"), ignored=self._ignored_accounts
+            )
+            print(self.hass)
+            self.hass.add_job(sensor_job)
+
+        return state
 
     @property
     def icon(self):

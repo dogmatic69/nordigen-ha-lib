@@ -86,28 +86,25 @@ def get_or_create_requisition(fn_create, fn_remove, fn_info, requisitions, refer
     return requisition
 
 
-def get_accounts(client, requisitions, logger, const):
+def get_accounts(client, requisition, logger, ignored):
     accounts = []
-    for requisition in requisitions:
-        logger.debug("Handling requisition :%s", requisition.get("id"))
+    for account_id in requisition.get("accounts", []):
+        if account_id in ignored:
+            logger.info("Account ignored due to configuration :%s", account_id)
+            continue
 
-        req_accounts = []
-        for account_id in requisition.get("accounts", []):
-            req_accounts.append(
-                get_account(
-                    fn=client.account.details,
-                    id=account_id,
-                    requisition=requisition,
-                    logger=logger,
-                    ignored=requisition["config"][const["IGNORE_ACCOUNTS"]],
-                )
+        accounts.append(
+            get_account(
+                fn=client.account.details,
+                id=account_id,
+                requisition=requisition,
+                logger=logger,
             )
-
-        accounts.extend([account for account in req_accounts if account])
+        )
     return accounts
 
 
-def get_account(fn, id, requisition, logger, ignored=[]):
+def get_account(fn, id, requisition, logger):
     account = {}
     try:
         account = fn(id)
@@ -120,10 +117,6 @@ def get_account(fn, id, requisition, logger, ignored=[]):
         logger.warn("No iban: %s | %s", requisition, account)
 
     ref = unique_ref(id, account)
-
-    if ref in ignored:
-        logger.info("Account ignored due to configuration :%s", ref)
-        return
 
     account = {
         "id": id,

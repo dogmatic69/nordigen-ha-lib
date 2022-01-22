@@ -1,4 +1,4 @@
-from .ng import get_accounts, get_client, get_requisitions
+from .ng import get_client, get_requisitions
 
 PLATFORMS = ["sensor"]
 
@@ -58,16 +58,9 @@ def entry(hass, config, const, logger):
         logger=logger,
         const=const,
     )
-    accounts = get_accounts(
-        client=client,
-        requisitions=requisitions,
-        logger=logger,
-        const=const,
-    )
 
     discovery = {
         "requisitions": requisitions,
-        "accounts": accounts,
     }
 
     for platform in PLATFORMS:

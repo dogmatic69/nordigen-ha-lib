@@ -108,19 +108,11 @@ class TestGetAccount(unittest.TestCase):
 
         logger.warn.assert_called_with("No iban: %s | %s", {}, {})
 
-    def test_ignored(self):
-        fn = MagicMock()
-        logger = MagicMock()
-        fn.return_value = {"account": {"iban": 123}}
-        get_account(fn=fn, id="id", requisition={}, logger=logger, ignored=[123])
-
-        logger.info.assert_called_with("Account ignored due to configuration :%s", 123)
-
     def test_normal(self):
         fn = MagicMock()
         logger = MagicMock()
         fn.return_value = {"account": {"iban": 321}}
-        res = get_account(fn=fn, id="id", requisition={"id": "req-id"}, logger=logger, ignored=[123])
+        res = get_account(fn=fn, id="id", requisition={"id": "req-id"}, logger=logger)
 
         self.assertEqual(321, res["iban"])
 
@@ -359,20 +351,22 @@ class TestGetAccounts(unittest.TestCase):
 
         client.requisitions.list.return_value = {}
 
-        res = get_accounts(client=client, requisitions=[], logger=logger, const={})
+        res = get_accounts(client=client, requisition={}, logger=logger, ignored=[])
 
         self.assertEqual([], res)
+
+    def test_ignored(self):
+        client = MagicMock()
+        logger = MagicMock()
+
+        get_accounts(client=client, requisition={"accounts": [123]}, logger=logger, ignored=[123])
+
+        logger.info.assert_called_with("Account ignored due to configuration :%s", 123)
 
     @unittest.mock.patch("nordigen_lib.ng.get_account")
     def test_works(self, mocked_get_account):
         client = MagicMock()
         client.requisitions.list.return_value = {"results": []}
-
-        const = {
-            "INSTITUTION_ID": "institution_id",
-            "IGNORE_ACCOUNTS": "ignore_accounts",
-            "ENDUSER_ID": "enduser_id",
-        }
 
         logger = MagicMock()
 
@@ -382,16 +376,16 @@ class TestGetAccounts(unittest.TestCase):
             {"foobar": "account-3"},
         ]
 
-        requisitions = [
-            {"id": "req-1", "accounts": [1, 2], "config": {"ignore_accounts": []}},
-            {"id": "req-2", "accounts": [3], "config": {"ignore_accounts": []}},
-        ]
-        res = get_accounts(client=client, requisitions=requisitions, logger=logger, const=const)
+        requisition = {
+            "id": "req-1",
+            "accounts": [1, 2],
+            "config": {"ignore_accounts": []},
+        }
+        res = get_accounts(client=client, requisition=requisition, logger=logger, ignored=[])
         self.assertEqual(
             [
                 {"foobar": "account-1"},
                 {"foobar": "account-2"},
-                {"foobar": "account-3"},
             ],
             res,
         )
@@ -407,18 +401,16 @@ class TestEntry(unittest.TestCase):
         self.assertTrue(res)
 
     @unittest.mock.patch("nordigen_lib.get_requisitions")
-    @unittest.mock.patch("nordigen_lib.get_accounts")
     @unittest.mock.patch("nordigen_lib.get_client")
-    def test_entry(self, mocked_get_client, mocked_get_accounts, mocked_get_requisitions):
+    def test_entry(self, mocked_get_client, mocked_get_requisitions):
         hass = MagicMock()
         client = MagicMock()
         logger = MagicMock()
 
-        mocked_get_accounts.return_value = ["account"]
         mocked_get_requisitions.return_value = ["requisition"]
         mocked_get_client.return_value = client
 
-        config = {"foobar": {"secret_id": "xxxx", "secret_key": "yyyy", "requisitions": []}}
+        config = {"foobar": {"secret_id": "xxxx", "secret_key": "yyyy", "requisitions": "requisitions"}}
         const = {
             "DOMAIN": "foobar",
             "SECRET_ID": "secret_id",
@@ -429,9 +421,9 @@ class TestEntry(unittest.TestCase):
         res = entry(hass=hass, config=config, const=const, logger=logger)
 
         mocked_get_client.assert_called_with(secret_id="xxxx", secret_key="yyyy")
-        mocked_get_accounts.assert_called_with(client=client, requisitions=["requisition"], logger=logger, const=const)
+        mocked_get_requisitions.assert_called_with(client=client, configs="requisitions", logger=logger, const=const)
         hass.helpers.discovery.load_platform.assert_called_with(
-            "sensor", "foobar", {"accounts": ["account"], "requisitions": ["requisition"]}, config
+            "sensor", "foobar", {"requisitions": ["requisition"]}, config
         )
 
         self.assertTrue(res)

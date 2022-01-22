@@ -141,29 +141,19 @@ class TestBuildSensors:
     @unittest.mock.patch("nordigen_lib.sensor.build_account_sensors")
     @pytest.mark.asyncio
     async def test_build_sensors_unconfirmed(self, mocked_build_account_sensors, mocked_build_requisition_sensor):
-        args = {"hass": "hass", "logger": "logger", "account": {"requires_auth": True}, "const": "const"}
-        await build_sensors(**args, debug="debug")
+        args = {
+            "hass": "hass",
+            "logger": "logger",
+            "account": {"requires_auth": True},
+            "const": "const",
+            "debug": "debug",
+        }
+        await build_sensors(**args)
         args["requisition"] = args["account"]
         del args["account"]
 
         mocked_build_account_sensors.assert_not_called()
         mocked_build_requisition_sensor.assert_called_with(**args)
-
-    @unittest.mock.patch("nordigen_lib.sensor.build_requisition_sensor")
-    @unittest.mock.patch("nordigen_lib.sensor.build_account_sensors")
-    @pytest.mark.asyncio
-    async def test_build_sensors_account(self, mocked_build_account_sensors, mocked_build_requisition_sensor):
-        args = {
-            "hass": "hass",
-            "logger": "logger",
-            "account": {"requires_auth": False},
-            "const": "const",
-            "debug": "debug",
-        }
-        await build_sensors(**args)
-
-        mocked_build_account_sensors.assert_called_with(**args)
-        mocked_build_requisition_sensor.assert_not_called()
 
 
 class TestBuildAccountSensors:
@@ -480,6 +470,8 @@ class TestSensors(unittest.TestCase):
 
 
 class TestNordigenUnconfirmedSensor(unittest.TestCase):
+    mocked_client = MagicMock()
+    mocked_logger = MagicMock()
     data = {
         "domain": "foobar",
         "coordinator": MagicMock(),
@@ -492,6 +484,11 @@ class TestNordigenUnconfirmedSensor(unittest.TestCase):
             "default": "something-else",
         },
         "config": "config",
+        "client": mocked_client,
+        "logger": mocked_logger,
+        "ignored_accounts": ["ignore_accounts"],
+        "const": {},
+        "debug": "debug",
     }
 
     def test_device_info(self):
@@ -544,10 +541,11 @@ class TestNordigenUnconfirmedSensor(unittest.TestCase):
     def test_state_attributes_not_linked(self, mocked_datatime):
         mocked_datatime.now.return_value = "last_update"
         mocked_coordinator = MagicMock()
-        mocked_coordinator.data = {"accounts": ["account-1", "account-2"]}
+        mocked_coordinator.data = {"accounts": ["account-1", "account-2"], "status": "Foo"}
         sensor = RequisitionSensor(**{**self.data, "coordinator": mocked_coordinator})
 
-        print(sensor.state_attributes)
+        sensor.hass = MagicMock()
+
         self.assertEqual(
             {
                 "initiate": "initiate",
@@ -560,30 +558,138 @@ class TestNordigenUnconfirmedSensor(unittest.TestCase):
                 ),
                 "accounts": ["account-1", "account-2"],
                 "last_update": "last_update",
+                "status": "Foo",
             },
             sensor.state_attributes,
         )
 
+    @unittest.mock.patch("nordigen_lib.sensor.build_account_sensors")
     @unittest.mock.patch("nordigen_lib.sensor.datetime")
-    def test_state_attributes_linked(self, mocked_datatime):
+    def test_state_attributes_linked(self, mocked_datatime, mocked_build_account_sensors):
         mocked_datatime.now.return_value = "last_update"
+        mocked_build_account_sensors.return_value = []
         mocked_coordinator = MagicMock()
         mocked_coordinator.data = {"accounts": ["account-1", "account-2"], "status": "LN"}
         sensor = RequisitionSensor(**{**self.data, "coordinator": mocked_coordinator})
+        sensor.hass = MagicMock()
+        sensor._setup_account_sensors = MagicMock()
 
-        print(sensor.state_attributes)
         self.assertEqual(
             {
-                "initiate": "initiate",
-                "info": (
-                    "Authentication is complete, restart Home Assistant to start "
-                    "collecting account data from 2 accounts."
-                ),
                 "accounts": ["account-1", "account-2"],
                 "last_update": "last_update",
+                "status": "LN",
             },
             sensor.state_attributes,
         )
+
+
+class TestAccountSensorSetup:
+    mocked_client = MagicMock()
+    mocked_logger = MagicMock()
+    data = {
+        "domain": "foobar",
+        "coordinator": MagicMock(),
+        "id": "account_id",
+        "enduser_id": "enduser_id",
+        "reference": "reference",
+        "initiate": "initiate",
+        "icons": {
+            "auth": "something",
+            "default": "something-else",
+        },
+        "config": "config",
+        "client": mocked_client,
+        "logger": mocked_logger,
+        "ignored_accounts": ["ignore_accounts"],
+        "const": {},
+        "debug": "debug",
+    }
+
+    @unittest.mock.patch("nordigen_lib.sensor.get_accounts")
+    @unittest.mock.patch("nordigen_lib.sensor.build_account_sensors")
+    @unittest.mock.patch("nordigen_lib.sensor.datetime")
+    @pytest.mark.asyncio
+    async def test_setup_account_sensors_new(self, mocked_datatime, mocked_build_account_sensors, mocked_get_accounts):
+        mocked_datatime.now.return_value = "last_update"
+        mocked_build_account_sensors.return_value = [
+            "account-sensor-1",
+        ]
+        mocked_coordinator = MagicMock()
+        mocked_coordinator.data = {"accounts": ["account-1", "account-2"], "status": "LN"}
+        sensor = RequisitionSensor(**{**self.data, "coordinator": mocked_coordinator})
+        sensor.hass = MagicMock()
+        sensor.platform = MagicMock()
+        sensor._account_sensors = {"zzz": True}
+
+        mocked_get_accounts.return_value = [
+            {
+                "balance_type": "whatever",
+                "iban": "iban",
+                "unique_ref": "unique_ref",
+                "name": "name",
+                "owner": "owner",
+                "product": "product",
+                "status": "status",
+                "bic": "bic",
+                "enduser_id": "req-user-id",
+                "reference": "req-ref",
+                "last_update": "last_update",
+            }
+        ]
+        await sensor._setup_account_sensors(client="client", accounts=["account-1"], ignored=[])
+
+        mocked_get_accounts.assert_called_once_with(
+            client="client",
+            requisition={"id": "account_id", "accounts": ["account-1"]},
+            logger=self.mocked_logger,
+            ignored=[],
+        )
+        sensor.platform.async_add_entities.assert_called_once_with(["account-sensor-1"])
+
+    @unittest.mock.patch("nordigen_lib.sensor.get_accounts")
+    @unittest.mock.patch("nordigen_lib.sensor.build_account_sensors")
+    @unittest.mock.patch("nordigen_lib.sensor.datetime")
+    @pytest.mark.asyncio
+    async def test_setup_account_sensors_existing(
+        self, mocked_datatime, mocked_build_account_sensors, mocked_get_accounts
+    ):
+        mocked_datatime.now.return_value = "last_update"
+        mocked_build_account_sensors.return_value = [
+            "account-sensor-1",
+        ]
+        mocked_coordinator = MagicMock()
+        mocked_coordinator.data = {"accounts": ["account-1", "account-2"], "status": "LN"}
+        sensor = RequisitionSensor(**{**self.data, "coordinator": mocked_coordinator})
+        sensor.hass = MagicMock()
+        sensor.platform = MagicMock()
+
+        sensor._account_sensors = {"zzz": True}
+
+        mocked_get_accounts.return_value = [
+            {
+                "balance_type": "whatever",
+                "iban": "iban",
+                "unique_ref": "zzz",
+                "name": "name",
+                "owner": "owner",
+                "product": "product",
+                "status": "status",
+                "bic": "bic",
+                "enduser_id": "req-user-id",
+                "reference": "req-ref",
+                "last_update": "last_update",
+            }
+        ]
+        await sensor._setup_account_sensors(client="client", accounts=["account-1"], ignored=[])
+
+        mocked_get_accounts.assert_called_once_with(
+            client="client",
+            requisition={"id": "account_id", "accounts": ["account-1"]},
+            logger=self.mocked_logger,
+            ignored=[],
+        )
+        sensor.platform.async_add_entities.assert_not_called()
 
 
 class TestBuildUnconfirmedSensor:
@@ -598,16 +704,22 @@ class TestBuildUnconfirmedSensor:
             "enduser_id": "user-123",
             "reference": "ref-123",
             "initiate": "https://whatever.com",
-            "config": "config",
+            "config": {
+                "ignore_accounts": [],
+            },
         }
 
-        const = {"DOMAIN": "foo", "ICON": {}}
+        const = {
+            "DOMAIN": "foo",
+            "ICON": {},
+            "IGNORE_ACCOUNTS": "ignore_accounts",
+        }
 
         mocked_coordinator = MagicMock()
         mocked_coordinator.async_config_entry_first_refresh = AsyncMagicMock()
         mocked_build_coordinator.return_value = mocked_coordinator
 
-        sensors = await build_requisition_sensor(hass, logger, requisition, const)
+        sensors = await build_requisition_sensor(hass, logger, requisition, const, False)
 
         case.assertEqual(1, len(sensors))
 
