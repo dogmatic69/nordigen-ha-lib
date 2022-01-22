@@ -28,7 +28,7 @@ setuptools.setup(
     author="Carl Sutton (dogmatic69)",
     author_email="dogmatic69@gmail.com",
     license='MIT',
-    keywords = ['nordigen', 'banking', 'home hassistant', 'hassio'],
+    keywords=['nordigen', 'banking', 'home hassistant', 'hassio'],
     url="https://github.com/dogmatic69/nordigen-ha-lib",
     python_requires=">=3.6",
     packages=["nordigen_lib"],

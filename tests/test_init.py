@@ -27,7 +27,7 @@ class TestSchema(unittest.TestCase):
 
         self.assertEqual(vol.Schema.call_count, 2)
         self.assertEqual(vol.Required.call_count, 5)
-        self.assertEqual(vol.Optional.call_count, 7)
+        self.assertEqual(vol.Optional.call_count, 6)
 
 
 class TestGetConfig(unittest.TestCase):
