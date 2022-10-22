@@ -1,5 +1,9 @@
 # Nordigen Home Assistant Integration Lib
 
+## Archived
+
+A better testing setup has been implemented in the custom integration so this lib has been integrated directly and is no longer required. All code is now part of https://github.com/dogmatic69/nordigen-homeassistant
+
 [![GitHub](https://img.shields.io/github/license/dogmatic69/nordigen-ha-lib)](LICENSE.txt)
 [![CodeFactor](https://www.codefactor.io/repository/github/dogmatic69/nordigen-ha-lib/badge)](https://www.codefactor.io/repository/github/dogmatic69/nordigen-ha-lib)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=dogmatic69_nordigen-ha-lib&metric=alert_status)](https://sonarcloud.io/dashboard?id=dogmatic69_nordigen-ha-lib)
